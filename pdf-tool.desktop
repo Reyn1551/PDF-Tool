@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=PDF Tool
+GenericName=PDF Editor & Converter
+Comment=Merge, split, compress, convert, edit, protect PDF — layaknya iLovePDF
+Exec=./run.sh
+Icon=assets/icon.png
+Terminal=false
+Categories=Office;Graphics;Utility;
+Keywords=pdf;merge;split;compress;convert;edit;
