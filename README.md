@@ -53,11 +53,25 @@ python3 tests/test_pdf_to_image_gui.py # 15 checks (integrasi GUI)
 ## 🗂️ Struktur
 
 ```
-pdf_tool.py       GUI utama (sidebar, preview, semua dialog)
-pdf_ops.py        Operasi inti PDF (PyMuPDF murni)
-pdf_convert.py    Konversi antar-format (images/office/html/docx)
-run.sh            Peluncur cepat
-install.sh        Installer pintasan menu aplikasi
-assets/icon.png   Ikon aplikasi
-tests/            Test suite (exit code 0 = lolos)
+pdf_tool.py           Entry point (facade kompatibilitas)
+run.sh                Peluncur cepat
+install.sh            Installer pintasan menu aplikasi
+assets/icon.png       Ikon aplikasi
+
+pdftool/              Paket GUI (hasil refactor modular)
+├── theme.py            Design tokens — warna & font
+├── dialogs.py          Picker file native (zenity + fallback tkinter)
+├── widgets.py          HoverButton, SidebarItem
+├── app.py              Kerangka aplikasi: layout, preview, status
+├── actions_organize.py Buka/hapus/merge/split/rotasi/urut/crop
+├── actions_security.py Watermark, password/unlock, repair
+├── actions_export.py   Ekspor image/text, compress, nomor halaman
+├── actions_edit.py     Edit teks digital & scan, stempel, metadata
+└── actions_convert.py  Image/Office/HTML→PDF, PDF→Word
+
+pdf_ops.py            Operasi inti PDF murni PyMuPDF
+pdf_convert.py        Konversi antar-format (images/office/html/docx)
+tests/                Test suite (exit code 0 = lolos)
 ```
+
+Menjalankan aplikasi: `./run.sh`, `python3 pdf_tool.py`, atau `python3 -m pdftool`.

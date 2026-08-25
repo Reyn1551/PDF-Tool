@@ -60,7 +60,7 @@ def main():
     check("'PDF → Image' enabled setelah buka PDF", ke_image_item._enabled is True)
 
     print("== 3. Buka Dialog Ekspor ke Image ==")
-    with patch("pdf_tool._safe_grab", side_effect=lambda w: w):
+    with patch("pdftool.actions_export._safe_grab", side_effect=lambda w: w):
         app.export_to_image()
 
     top_dialogs = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)]
@@ -82,8 +82,8 @@ def main():
     out_all_png = os.path.join(tmp_dir, "out_all_png")
     os.makedirs(out_all_png, exist_ok=True)
 
-    with patch("pdf_tool.native_open_dir", return_value=out_all_png), \
-         patch("pdf_tool.messagebox.showinfo") as mock_info:
+    with patch("pdftool.actions_export.native_open_dir", return_value=out_all_png), \
+         patch("pdftool.actions_export.messagebox.showinfo") as mock_info:
         var_fmt = tk.StringVar(value="png")
         var_dpi = tk.StringVar(value="150")
         quality_entry.config(state=tk.NORMAL)
@@ -98,7 +98,7 @@ def main():
     check("Format nama file sesuai", files_png[0] == "test_doc_halaman-1.png")
 
     print("== 5. Ekspor Subset Halaman JPEG (Halaman 2 & 4) ==")
-    with patch("pdf_tool._safe_grab", side_effect=lambda w: w):
+    with patch("pdftool.actions_export._safe_grab", side_effect=lambda w: w):
         app.tool.clear_selection()
         app.tool.toggle_select(1)
         app.tool.toggle_select(3)
@@ -109,8 +109,8 @@ def main():
     out_sub_jpg = os.path.join(tmp_dir, "out_sub_jpg")
     os.makedirs(out_sub_jpg, exist_ok=True)
 
-    with patch("pdf_tool.native_open_dir", return_value=out_sub_jpg), \
-         patch("pdf_tool.messagebox.showinfo") as mock_info:
+    with patch("pdftool.actions_export.native_open_dir", return_value=out_sub_jpg), \
+         patch("pdftool.actions_export.messagebox.showinfo") as mock_info:
         var_fmt = tk.StringVar(value="jpeg")
         var_dpi = tk.StringVar(value="300")
         q_entry = tk.Entry(dlg2)
@@ -128,11 +128,11 @@ def main():
     check("Dimensi JPEG 300 DPI akurat (~1667px)", abs(pix.width - exp_w) <= 1, f"got {pix.width}")
 
     print("== 6. Error handling pada input kualitas tidak valid ==")
-    with patch("pdf_tool._safe_grab", side_effect=lambda w: w):
+    with patch("pdftool.actions_export._safe_grab", side_effect=lambda w: w):
         app.export_to_image()
     dlg3 = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)][0]
-    with patch("pdf_tool.native_open_dir", return_value=tmp_dir), \
-         patch("pdf_tool.messagebox.showerror") as mock_err:
+    with patch("pdftool.actions_export.native_open_dir", return_value=tmp_dir), \
+         patch("pdftool.actions_export.messagebox.showerror") as mock_err:
         q_entry_bad = tk.Entry(dlg3)
         q_entry_bad.insert(0, "abc")
         app._do_export_images(dlg3, tk.StringVar(value="jpeg"), q_entry_bad, tk.StringVar(value="150"))
