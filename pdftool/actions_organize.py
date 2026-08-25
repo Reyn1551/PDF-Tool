@@ -1,4 +1,4 @@
-"""Aksi organisasi halaman: buka, hapus, merge, split, rotasi, urut, crop."""
+"""Page organization actions: open, delete, merge, split, rotate, reorder, crop."""
 import os
 
 import tkinter as tk
@@ -15,14 +15,14 @@ from pdf_ops import PDFTool
 
 
 class OrganizeActions:
-    """Mixin — digabungkan ke PDFToolApp lewat pewarisan berganda."""
+    """Mixin — combined into PDFToolApp via multiple inheritance."""
 
     def open_pdf(self):
-        path = native_open_file("Pilih PDF")
+        path = native_open_file("Select PDF")
         if not path:
             return
         password = None
-        for attempt in range(3):  # maksimal 3 percobaan password
+        for attempt in range(3):  # maximum 3 password attempts
             try:
                 self.tool.open(path, password)
                 break
@@ -30,18 +30,18 @@ class OrganizeActions:
                 if str(e) == "NEEDS_PASSWORD":
                     password = simpledialog.askstring(
                         "Password",
-                        "PDF ini dilindungi password.\nMasukkan password"
-                        + (f"  (percobaan {attempt + 1}/3)" if attempt else "")
+                        "This PDF is password protected.\nEnter password"
+                        + (f"  (attempt {attempt + 1}/3)" if attempt else "")
                         + ":",
                         show="*", parent=self.root,
                     )
                     if password is None:
-                        return  # user membatalkan
+                        return  # user cancelled
                 else:
                     messagebox.showerror("PDF Tool", str(e), parent=self.root)
                     return
         else:
-            messagebox.showerror("PDF Tool", "Password salah 3 kali.", parent=self.root)
+            messagebox.showerror("PDF Tool", "Wrong password 3 times.", parent=self.root)
             return
         self._refresh_preview()
 
@@ -55,9 +55,9 @@ class OrganizeActions:
         if not self._require_doc():
             return
         if not self.tool.selection:
-            messagebox.showinfo("PDF Tool", "Pilih halaman yang mau dihapus dulu.", parent=self.root)
+            messagebox.showinfo("PDF Tool", "Select pages to delete first.", parent=self.root)
             return
-        if not messagebox.askyesno("Hapus halaman", f"Hapus {len(self.tool.selection)} halaman terpilih?", parent=self.root):
+        if not messagebox.askyesno("Delete Pages", f"Delete {len(self.tool.selection)} selected page(s)?", parent=self.root):
             return
         try:
             self.tool.delete_pages(self.tool.selection)
@@ -69,20 +69,20 @@ class OrganizeActions:
     def merge_pdf(self):
         if not self._require_doc():
             return
-        paths = native_open_files("Pilih PDF untuk digabung")
+        paths = native_open_files("Select PDF to merge")
         if not paths:
             return
         try:
             self.tool.merge(list(paths))
         except Exception as e:
-            messagebox.showerror("PDF Tool", f"Gagal merge: {e}", parent=self.root)
+            messagebox.showerror("PDF Tool", f"Failed to merge: {e}", parent=self.root)
             return
         self._refresh_preview()
 
     def insert_pages(self):
         if not self._require_doc():
             return
-        path = native_open_file("Pilih PDF sumber")
+        path = native_open_file("Select source PDF")
         if not path:
             return
         try:
@@ -94,8 +94,8 @@ class OrganizeActions:
         total = other.page_count
         other.close()
         sel_src = simpledialog.askstring(
-            "Sisip dari PDF lain",
-            f"PDF sumber punya {total} halaman.\nNomor halaman yang mau disisipkan (pisahkan dengan koma, contoh: 1,3,5-7):",
+            "Insert from Another PDF",
+            f"Source PDF has {total} page(s).\nPage numbers to insert (comma-separated, e.g.: 1,3,5-7):",
             parent=self.root,
         )
         if not sel_src:
@@ -106,8 +106,8 @@ class OrganizeActions:
             messagebox.showerror("PDF Tool", str(e), parent=self.root)
             return
         pos = simpledialog.askinteger(
-            "Sisip dari PDF lain",
-            f"Posisi sisip di PDF utama (1-{self.tool.page_count + 1}):",
+            "Insert from Another PDF",
+            f"Insert position in main PDF (1-{self.tool.page_count + 1}):",
             initialvalue=self.tool.page_count + 1, minvalue=1, maxvalue=self.tool.page_count + 1,
             parent=self.root,
         )
@@ -129,34 +129,34 @@ class OrganizeActions:
         _safe_grab(dlg)
         dlg.configure(bg=BG)
         var = tk.StringVar(value="range")
-        tk.Radiobutton(dlg, text="Rentang halaman (contoh: 3-7 atau 1,3,5-8)", variable=var, value="range",
+        tk.Radiobutton(dlg, text="Page range (e.g.: 3-7 or 1,3,5-8)", variable=var, value="range",
                        bg=BG, fg=TEXT, font=FONT, activebackground=BG, selectcolor=SURFACE).pack(anchor="w", padx=16, pady=(12, 2))
-        tk.Radiobutton(dlg, text="Semua halaman (tiap halaman jadi file terpisah)", variable=var, value="all",
+        tk.Radiobutton(dlg, text="All pages (each page as separate file)", variable=var, value="all",
                        bg=BG, fg=TEXT, font=FONT, activebackground=BG, selectcolor=SURFACE).pack(anchor="w", padx=16, pady=2)
         entry = tk.Entry(dlg, font=FONT, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         entry.pack(padx=16, pady=(8, 12), fill=tk.X)
         btn_row = tk.Frame(dlg, bg=BG)
         btn_row.pack(pady=(0, 12))
-        HoverButton(btn_row, "Batal", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Cancel", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
         HoverButton(btn_row, "Split", command=lambda: self._do_split(dlg, var.get(), entry.get()), primary=True, small=True).pack(side=tk.LEFT, padx=6)
 
     def _do_split(self, dlg, mode, rng):
         dlg.destroy()
         try:
             if mode == "all":
-                outdir = native_open_dir("Folder tujuan simpan")
+                outdir = native_open_dir("Destination folder")
                 if not outdir:
                     return
                 for i in range(self.tool.page_count):
                     single = fitz.open()
                     single.insert_pdf(self.tool.doc, from_page=i, to_page=i)
-                    single.save(os.path.join(outdir, f"halaman_{i+1}.pdf"))
+                    single.save(os.path.join(outdir, f"page_{i+1}.pdf"))
                     single.close()
             else:
                 if not rng:
-                    raise ValueError("Isi rentang halaman dulu (contoh: 3-7 atau 1,3,5-8).")
+                    raise ValueError("Enter page range first (e.g.: 3-7 or 1,3,5-8).")
                 idx = self._parse_range(rng, self.tool.page_count)
-                path = native_save_file("Simpan hasil split", initial="split.pdf")
+                path = native_save_file("Save split result", initial="split.pdf")
                 if not path:
                     return
                 out = fitz.open()
@@ -168,15 +168,15 @@ class OrganizeActions:
             messagebox.showerror("PDF Tool", str(e), parent=self.root)
             return
         except Exception as e:
-            messagebox.showerror("PDF Tool", f"Split gagal: {e}", parent=self.root)
+            messagebox.showerror("PDF Tool", f"Split failed: {e}", parent=self.root)
             return
-        messagebox.showinfo("PDF Tool", "Split selesai.", parent=self.root)
+        messagebox.showinfo("PDF Tool", "Split complete.", parent=self.root)
 
     def rotate(self, angle):
         if not self._require_doc():
             return
         if not self.tool.selection:
-            messagebox.showinfo("PDF Tool", "Pilih halaman yang mau diputar dulu.", parent=self.root)
+            messagebox.showinfo("PDF Tool", "Select pages to rotate first.", parent=self.root)
             return
         try:
             self.tool.rotate(self.tool.selection, angle)
@@ -189,12 +189,12 @@ class OrganizeActions:
         if not self._require_doc():
             return
         if not self.tool.selection:
-            messagebox.showinfo("PDF Tool", "Pilih halaman yang mau dipindah dulu.", parent=self.root)
+            messagebox.showinfo("PDF Tool", "Select pages to move first.", parent=self.root)
             return
         n = self.tool.page_count - len(self.tool.selection)
         target = simpledialog.askinteger(
-            "Urut Ulang",
-            f"Posisi tujuan (1-{n + 1}). Contoh: pindahkan halaman 3,5 ke posisi 1:",
+            "Reorder Pages",
+            f"Target position (1-{n + 1}). Example: move pages 3,5 to position 1:",
             initialvalue=1, minvalue=1, maxvalue=n + 1, parent=self.root,
         )
         if target is None:
@@ -209,15 +209,15 @@ class OrganizeActions:
     def save_as(self):
         if not self._require_doc():
             return
-        path = native_save_file("Simpan PDF")
+        path = native_save_file("Save PDF")
         if not path:
             return
         try:
             self.tool.save_as(path)
         except Exception as e:
-            messagebox.showerror("PDF Tool", f"Gagal simpan: {e}", parent=self.root)
+            messagebox.showerror("PDF Tool", f"Failed to save: {e}", parent=self.root)
             return
-        messagebox.showinfo("PDF Tool", f"Tersimpan: {path}", parent=self.root)
+        messagebox.showinfo("PDF Tool", f"Saved: {path}", parent=self.root)
 
     def reverse_pages(self):
         if not self._require_doc():
@@ -225,28 +225,28 @@ class OrganizeActions:
         try:
             self.tool.reverse_pages()
         except Exception as e:
-            messagebox.showerror("PDF Tool", f"Gagal membalik urutan: {e}", parent=self.root)
+            messagebox.showerror("PDF Tool", f"Failed to reverse order: {e}", parent=self.root)
             return
         self._refresh_preview()
 
-    # ---------- Fitur baru: Crop ----------
+    # ---------- New feature: Crop ----------
     def crop_pages_ui(self):
         if not self._require_doc():
             return
         n_sel = len(self.tool.selection)
-        info = f"{n_sel} halaman terpilih." if n_sel else "Semua halaman."
+        info = f"{n_sel} page(s) selected." if n_sel else "All pages."
         dlg = tk.Toplevel(self.root)
-        dlg.title("Crop / Potong Tepi")
+        dlg.title("Crop Pages")
         dlg.transient(self.root)
         _safe_grab(dlg)
         dlg.configure(bg=BG)
-        tk.Label(dlg, text=f"Potong tepi: {info}", font=FONT_BOLD, bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
-        tk.Label(dlg, text="Rasio potong tiap sisi (0 - 0.45 dari ukuran halaman):",
+        tk.Label(dlg, text=f"Crop edges: {info}", font=FONT_BOLD, bg=BG, fg=TEXT).pack(anchor="w", padx=16, pady=(12, 2))
+        tk.Label(dlg, text="Crop ratio per side (0 - 0.45 of page size):",
                  font=FONT_SMALL, bg=BG, fg=TEXT_MUTED, anchor="w").pack(fill=tk.X, padx=16)
         row = tk.Frame(dlg, bg=BG)
         row.pack(padx=16, pady=8)
         vars_ = {}
-        for i, (label, default) in enumerate((("Kiri", "0"), ("Atas", "0"), ("Kanan", "0"), ("Bawah", "0"))):
+        for i, (label, default) in enumerate((("Left", "0"), ("Top", "0"), ("Right", "0"), ("Bottom", "0"))):
             tk.Label(row, text=label, font=FONT_SMALL, bg=BG, fg=TEXT).grid(row=0, column=i, padx=(0, 4))
             e = tk.Entry(row, width=6, font=FONT_SMALL, relief=tk.FLAT,
                          highlightthickness=1, highlightbackground=BORDER, justify=tk.CENTER)
@@ -255,13 +255,13 @@ class OrganizeActions:
             vars_[label] = e
         btn_row = tk.Frame(dlg, bg=BG)
         btn_row.pack(pady=(6, 12))
-        HoverButton(btn_row, "Batal", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Cancel", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
 
         def do_crop():
             try:
-                vals = [float(vars_[k].get() or 0) for k in ("Kiri", "Atas", "Kanan", "Bawah")]
+                vals = [float(vars_[k].get() or 0) for k in ("Left", "Top", "Right", "Bottom")]
             except ValueError:
-                messagebox.showerror("Crop", "Semua nilai harus angka.", parent=dlg)
+                messagebox.showerror("Crop", "All values must be numbers.", parent=dlg)
                 return
             pages = list(self.tool.selection) if self.tool.selection else None
             dlg.destroy()
@@ -272,7 +272,7 @@ class OrganizeActions:
                 return
             self._refresh_preview()
 
-        HoverButton(btn_row, "Potong", command=do_crop, primary=True, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Crop", command=do_crop, primary=True, small=True).pack(side=tk.LEFT, padx=6)
 
     def _parse_range(self, s, total):
         idx = []
@@ -283,13 +283,13 @@ class OrganizeActions:
                 a, b = part.split("-")
                 a, b = int(a), int(b)
                 if a < 1 or b > total or a > b:
-                    raise ValueError(f"Rentang {part} tidak valid (maks {total}).")
+                    raise ValueError(f"Range {part} is invalid (max {total}).")
                 idx.extend(range(a - 1, b))
             else:
                 v = int(part)
                 if v < 1 or v > total:
-                    raise ValueError(f"Halaman {v} tidak valid (maks {total}).")
+                    raise ValueError(f"Page {v} is invalid (max {total}).")
                 idx.append(v - 1)
         if not idx:
-            raise ValueError("Tidak ada halaman dipilih.")
+            raise ValueError("No pages selected.")
         return idx

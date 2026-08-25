@@ -1,4 +1,4 @@
-"""Editor teks digital & teks-bebas untuk PDF scan, stempel gambar, metadata."""
+"""Digital text & free-text editor for scanned PDFs, image stamps, metadata."""
 import os
 
 import tkinter as tk
@@ -11,13 +11,13 @@ from .widgets import HoverButton, _safe_grab
 
 
 class EditActions:
-    """Mixin — digabungkan ke PDFToolApp lewat pewarisan berganda."""
+    """Mixin — combined into PDFToolApp via multiple inheritance."""
 
     def edit_text(self):
         if not self._require_doc():
             return
         dlg = tk.Toplevel(self.root)
-        dlg.title("Edit & Tambah Teks")
+        dlg.title("Edit & Add Text")
         dlg.transient(self.root)
         _safe_grab(dlg)
         dlg.configure(bg=BG)
@@ -35,11 +35,11 @@ class EditActions:
         dlg.drag_start = None
         dlg.selected_rect = None
 
-        # Top Bar: Navigasi Halaman
+        # Top Bar: Page Navigation
         top_bar = tk.Frame(dlg, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER)
         top_bar.pack(fill=tk.X, side=tk.TOP)
 
-        tk.Label(top_bar, text="Edit & Tambah Teks", font=FONT_BOLD, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT, padx=16, pady=10)
+        tk.Label(top_bar, text="Edit & Add Text", font=FONT_BOLD, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT, padx=16, pady=10)
 
         nav_frame = tk.Frame(top_bar, bg=SURFACE)
         nav_frame.pack(side=tk.RIGHT, padx=16, pady=6)
@@ -47,7 +47,7 @@ class EditActions:
         btn_prev = HoverButton(nav_frame, "\u25c0", command=lambda: self._edit_change_page(dlg, -1), small=True, padx=8, pady=4)
         btn_prev.pack(side=tk.LEFT, padx=2)
 
-        tk.Label(nav_frame, text="Halaman:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT, padx=(6, 2))
+        tk.Label(nav_frame, text="Page:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT, padx=(6, 2))
         page_var = tk.StringVar(value=str(dlg.current_page + 1))
         dlg.page_var = page_var
         page_entry = tk.Entry(nav_frame, textvariable=page_var, width=4, font=FONT_SMALL, justify=tk.CENTER,
@@ -106,21 +106,21 @@ class EditActions:
                 tab_btn_digital.label.config(bg=SURFACE, fg=TEXT)
                 self._render_edit_canvas(dlg)
 
-        tab_btn_digital = HoverButton(tab_frame, "Ganti Teks Digital", command=lambda: switch_tab("digital"), primary=True, small=True)
+        tab_btn_digital = HoverButton(tab_frame, "Replace Digital Text", command=lambda: switch_tab("digital"), primary=True, small=True)
         tab_btn_digital.pack(side=tk.LEFT, padx=(0, 6))
         dlg.tab_btn_digital = tab_btn_digital
 
-        tab_btn_custom = HoverButton(tab_frame, "Tambah / Timpa Teks Bebas (Untuk PDF Scan & Gambar)", command=lambda: switch_tab("custom"), small=True)
+        tab_btn_custom = HoverButton(tab_frame, "Add / Overwrite Free Text (For Scanned & Image PDFs)", command=lambda: switch_tab("custom"), small=True)
         tab_btn_custom.pack(side=tk.LEFT, padx=6)
         dlg.tab_btn_custom = tab_btn_custom
         dlg.switch_tab = switch_tab
 
         # ==========================================
-        # TAB 1: GANTI TEKS DIGITAL
+        # TAB 1: REPLACE DIGITAL TEXT
         # ==========================================
         search_row = tk.Frame(frame_digital, bg=BG)
         search_row.pack(fill=tk.X, pady=(0, 6))
-        tk.Label(search_row, text="Cari teks:", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 6))
+        tk.Label(search_row, text="Search text:", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED).pack(side=tk.LEFT, padx=(0, 6))
         search_var = tk.StringVar()
         dlg.search_var = search_var
         search_entry = tk.Entry(search_row, textvariable=search_var, font=FONT_SMALL, relief=tk.FLAT,
@@ -134,12 +134,12 @@ class EditActions:
 
         # 1. Empty Notice Frame (for scanned / image PDFs)
         empty_notice = tk.Frame(digital_body, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER, padx=24, pady=28)
-        tk.Label(empty_notice, text="Dokumen Hasil Scan / Gambar", font=FONT_BOLD, bg=SURFACE, fg=TEXT).pack(pady=(0, 6))
+        tk.Label(empty_notice, text="Scanned / Image Document", font=FONT_BOLD, bg=SURFACE, fg=TEXT).pack(pady=(0, 6))
         tk.Label(empty_notice,
-                 text="Tidak ditemukan layer teks digital pada halaman ini karena halaman merupakan gambar atau hasil scan.\n"
-                      "Untuk mengedit, mengganti, atau menambahkan tulisan pada dokumen scan ini, gunakan mode 'Tambah / Timpa Teks Bebas'.",
+                 text="No digital text layer found on this page because the page is an image or scan.\n"
+                      "To edit, replace, or add text to this scanned document, use the 'Add / Overwrite Free Text' mode.",
                  font=FONT, bg=SURFACE, fg=TEXT_MUTED, justify=tk.CENTER, wraplength=520).pack(pady=4)
-        HoverButton(empty_notice, "Buka Mode Tambah / Timpa Teks Bebas \u2794", command=lambda: switch_tab("custom"), primary=True).pack(pady=(14, 0))
+        HoverButton(empty_notice, "Open Add / Overwrite Free Text Mode \u2794", command=lambda: switch_tab("custom"), primary=True).pack(pady=(14, 0))
         dlg.empty_notice = empty_notice
 
         # 2. Spans List View Frame (for digital PDFs)
@@ -164,12 +164,12 @@ class EditActions:
         edit_box = tk.Frame(spans_view, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER, padx=14, pady=10)
         edit_box.pack(fill=tk.X, pady=(4, 0))
 
-        info_label = tk.Label(edit_box, text="Pilih salah satu baris teks di atas untuk diedit.", font=FONT_SMALL,
+        info_label = tk.Label(edit_box, text="Select a text row above to edit.", font=FONT_SMALL,
                               bg=SURFACE, fg=TEXT_MUTED, anchor="w", justify=tk.LEFT)
         info_label.pack(fill=tk.X, pady=(0, 6))
         dlg.info_label = info_label
 
-        tk.Label(edit_box, text="Teks baru:", font=FONT_BOLD, bg=SURFACE, fg=TEXT, anchor="w").pack(fill=tk.X)
+        tk.Label(edit_box, text="New text:", font=FONT_BOLD, bg=SURFACE, fg=TEXT, anchor="w").pack(fill=tk.X)
         entry_new_text = tk.Entry(edit_box, font=FONT, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         entry_new_text.pack(fill=tk.X, pady=(2, 6))
         dlg.entry_new_text = entry_new_text
@@ -178,32 +178,32 @@ class EditActions:
         opts_row.pack(fill=tk.X, pady=(0, 8))
 
         auto_shrink_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(opts_row, text="Sesuaikan ukuran font otomatis jika teks lebih panjang (Auto-shrink)",
+        tk.Checkbutton(opts_row, text="Auto-shrink font size if text is longer",
                        variable=auto_shrink_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE).pack(side=tk.LEFT)
 
         whiteout_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(opts_row, text="Tutup teks lama dengan warna putih",
+        tk.Checkbutton(opts_row, text="Cover old text with white",
                        variable=whiteout_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE).pack(side=tk.LEFT, padx=12)
 
         btn_row_digital = tk.Frame(edit_box, bg=SURFACE)
         btn_row_digital.pack(fill=tk.X)
 
-        HoverButton(btn_row_digital, "Terapkan Perubahan",
+        HoverButton(btn_row_digital, "Apply Changes",
                     command=lambda: self._do_digital_replace(dlg, entry_new_text, auto_shrink_var.get(), whiteout_var.get()),
                     primary=True, small=True).pack(side=tk.RIGHT, padx=4)
 
-        HoverButton(btn_row_digital, "Ganti Semua yang Sama",
+        HoverButton(btn_row_digital, "Replace All Matches",
                     command=lambda: self._do_digital_replace_all(dlg, entry_new_text, auto_shrink_var.get(), whiteout_var.get()),
                     small=True).pack(side=tk.RIGHT, padx=4)
 
-        HoverButton(btn_row_digital, "Kosongkan / Hapus Teks",
+        HoverButton(btn_row_digital, "Clear / Delete Text",
                     command=lambda: self._do_digital_clear(dlg),
                     danger=True, small=True).pack(side=tk.LEFT, padx=4)
 
         listbox.bind("<<ListboxSelect>>", lambda e: self._on_digital_span_select(dlg))
 
         # ==========================================
-        # TAB 2: TAMBAH / TIMPA TEKS BEBAS (SCAN & DIGITAL)
+        # TAB 2: ADD / OVERWRITE FREE TEXT (SCAN & DIGITAL)
         # ==========================================
         split_frame = tk.Frame(frame_custom, bg=BG)
         split_frame.pack(fill=tk.BOTH, expand=True)
@@ -214,8 +214,8 @@ class EditActions:
 
         canvas_header = tk.Frame(preview_col, bg=BG)
         canvas_header.pack(fill=tk.X, pady=(0, 4))
-        tk.Label(canvas_header, text="1. Klik dokumen untuk tentukan posisi teks:", font=FONT_BOLD, bg=BG, fg=TEXT).pack(side=tk.LEFT)
-        tk.Label(canvas_header, text="(atau seret kotak)", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED).pack(side=tk.LEFT, padx=4)
+        tk.Label(canvas_header, text="1. Click document to set text position:", font=FONT_BOLD, bg=BG, fg=TEXT).pack(side=tk.LEFT)
+        tk.Label(canvas_header, text="(or drag a box)", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED).pack(side=tk.LEFT, padx=4)
 
         canvas_container = tk.Frame(preview_col, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER)
         canvas_container.pack(fill=tk.BOTH, expand=True)
@@ -229,15 +229,15 @@ class EditActions:
         form_col.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(8, 0))
         form_col.pack_propagate(False)
 
-        tk.Label(form_col, text="2. Masukkan teks & atur gaya:", font=FONT_BOLD, bg=SURFACE, fg=TEXT, anchor="w").pack(fill=tk.X, pady=(0, 6))
+        tk.Label(form_col, text="2. Enter text & set style:", font=FONT_BOLD, bg=SURFACE, fg=TEXT, anchor="w").pack(fill=tk.X, pady=(0, 6))
 
-        tk.Label(form_col, text="Teks yang akan dimasukkan:", font=FONT_SMALL, bg=SURFACE, fg=TEXT_MUTED, anchor="w").pack(fill=tk.X)
+        tk.Label(form_col, text="Text to insert:", font=FONT_SMALL, bg=SURFACE, fg=TEXT_MUTED, anchor="w").pack(fill=tk.X)
         text_custom_entry = tk.Text(form_col, height=4, font=FONT, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         text_custom_entry.pack(fill=tk.X, pady=(2, 8))
 
         pos_row = tk.Frame(form_col, bg=SURFACE)
         pos_row.pack(fill=tk.X, pady=(0, 6))
-        tk.Label(pos_row, text="Posisi X:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT)
+        tk.Label(pos_row, text="Position X:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT)
         x_var = tk.StringVar(value="72")
         entry_x = tk.Entry(pos_row, textvariable=x_var, width=6, font=FONT_SMALL, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         entry_x.pack(side=tk.LEFT, padx=(4, 12))
@@ -255,7 +255,7 @@ class EditActions:
         om_font.config(font=FONT_SMALL, bg=SURFACE, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         om_font.pack(side=tk.LEFT, padx=(4, 12))
 
-        tk.Label(f_row1, text="Ukuran:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT)
+        tk.Label(f_row1, text="Size:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT)
         size_var = tk.StringVar(value="12")
         om_size = tk.Spinbox(f_row1, from_=6, to=72, textvariable=size_var, width=4, font=FONT_SMALL, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         om_size.pack(side=tk.LEFT, padx=(4, 0))
@@ -263,32 +263,32 @@ class EditActions:
         f_row2 = tk.Frame(form_col, bg=SURFACE)
         f_row2.pack(fill=tk.X, pady=(0, 8))
         bold_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(f_row2, text="Tebal", variable=bold_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE).pack(side=tk.LEFT)
+        tk.Checkbutton(f_row2, text="Bold", variable=bold_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE).pack(side=tk.LEFT)
         italic_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(f_row2, text="Miring", variable=italic_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE).pack(side=tk.LEFT, padx=8)
+        tk.Checkbutton(f_row2, text="Italic", variable=italic_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE).pack(side=tk.LEFT, padx=8)
 
-        tk.Label(f_row2, text="Warna:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT, padx=(8, 4))
-        color_var = tk.StringVar(value="Hitam")
-        om_color = tk.OptionMenu(f_row2, color_var, "Hitam", "Biru", "Merah", "Hijau", "Putih", "Abu-abu")
+        tk.Label(f_row2, text="Color:", font=FONT_SMALL, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT, padx=(8, 4))
+        color_var = tk.StringVar(value="Black")
+        om_color = tk.OptionMenu(f_row2, color_var, "Black", "Blue", "Red", "Green", "White", "Gray")
         om_color.config(font=FONT_SMALL, bg=SURFACE, relief=tk.FLAT, highlightthickness=1, highlightbackground=BORDER)
         om_color.pack(side=tk.LEFT)
 
         whiteout_custom_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(form_col, text="Tutup latar belakang dengan warna putih (Whiteout/Timpa tulisan scan)",
+        tk.Checkbutton(form_col, text="Cover background with white (Whiteout/overwrite scanned text)",
                        variable=whiteout_custom_var, bg=SURFACE, fg=TEXT, font=FONT_SMALL, activebackground=SURFACE,
                        wraplength=340, justify=tk.LEFT).pack(anchor="w", pady=(0, 10))
 
         custom_action_frame = tk.Frame(form_col, bg=SURFACE)
         custom_action_frame.pack(fill=tk.X, pady=(4, 0))
 
-        HoverButton(custom_action_frame, "Sisipkan Teks ke Dokumen",
+        HoverButton(custom_action_frame, "Insert Text into Document",
                     command=lambda: self._do_insert_custom_text(
                         dlg, text_custom_entry, x_var, y_var, size_var, font_family_var,
                         bold_var, italic_var, color_var, whiteout_custom_var
                     ),
                     primary=True).pack(fill=tk.X, pady=(0, 6))
 
-        HoverButton(custom_action_frame, "Tutup Area Saja (Whiteout)",
+        HoverButton(custom_action_frame, "Whiteout Area Only",
                     command=lambda: self._do_whiteout_only(dlg, x_var, y_var),
                     small=True).pack(fill=tk.X)
 
@@ -333,7 +333,7 @@ class EditActions:
                 y_var.set(str(round(pdf_y, 1)))
                 dlg.selected_rect = None
                 canvas_page.create_oval(x0 - 4, y0 - 4, x0 + 4, y0 + 4, fill=DANGER, outline="#ffffff", width=1.5, tags="marker")
-                status_custom_lbl.config(text=f"Posisi dipilih: ({pdf_x:.1f}, {pdf_y:.1f}) pt", fg=TEXT_MUTED)
+                status_custom_lbl.config(text=f"Selected position: ({pdf_x:.1f}, {pdf_y:.1f}) pt", fg=TEXT_MUTED)
             else:
                 # Drag Box
                 min_x = min(x0, x1)
@@ -348,7 +348,7 @@ class EditActions:
                 y_var.set(str(round(pdf_y, 1)))
                 dlg.selected_rect = (pdf_x, pdf_y, box_w, box_h)
                 canvas_page.create_rectangle(min_x, min_y, max_x, max_y, outline=DANGER, width=1.5, tags="marker")
-                status_custom_lbl.config(text=f"Area dipilih: ({pdf_x:.1f}, {pdf_y:.1f}) ukuran {box_w:.1f}x{box_h:.1f} pt", fg=TEXT_MUTED)
+                status_custom_lbl.config(text=f"Selected area: ({pdf_x:.1f}, {pdf_y:.1f}) size {box_w:.1f}x{box_h:.1f} pt", fg=TEXT_MUTED)
             dlg.drag_start = None
 
         canvas_page.bind("<Button-1>", on_canvas_click)
@@ -374,7 +374,7 @@ class EditActions:
         dlg.selected_span_idx = None
         dlg.selected_rect = None
 
-        # Muat span teks digital
+        # Load digital text spans
         try:
             spans = self.tool.get_text_spans(pno)
         except Exception:
@@ -405,7 +405,7 @@ class EditActions:
 
         if len(dlg.spans) > 0:
             dlg.info_label.config(
-                text=f"{len(dlg.filtered_spans)} dari {len(dlg.spans)} span teks di halaman {dlg.current_page + 1}. Pilih salah satu untuk diedit.",
+                text=f"{len(dlg.filtered_spans)} of {len(dlg.spans)} text spans on page {dlg.current_page + 1}. Select one to edit.",
                 fg=TEXT_MUTED,
             )
         dlg.entry_new_text.delete(0, tk.END)
@@ -420,8 +420,8 @@ class EditActions:
         orig_idx, s = dlg.filtered_spans[idx_in_filtered]
         dlg.selected_span_idx = orig_idx
         dlg.info_label.config(
-            text=f"Font: {s['font']}  \u00b7  Ukuran: {s['size']:.1f}pt  \u00b7  "
-                 f"Warna: #{s['color']:06x}  \u00b7  Posisi: ({s['bbox'].x0:.1f}, {s['bbox'].y0:.1f}) pt",
+            text=f"Font: {s['font']}  \u00b7  Size: {s['size']:.1f}pt  \u00b7  "
+                 f"Color: #{s['color']:06x}  \u00b7  Position: ({s['bbox'].x0:.1f}, {s['bbox'].y0:.1f}) pt",
             fg=TEXT,
         )
         dlg.entry_new_text.delete(0, tk.END)
@@ -429,11 +429,11 @@ class EditActions:
 
     def _do_digital_replace(self, dlg, entry_new_text, auto_shrink, whiteout):
         if dlg.selected_span_idx is None:
-            messagebox.showinfo("Edit Teks", "Pilih teks yang mau diganti terlebih dahulu.", parent=dlg)
+            messagebox.showinfo("Edit Text", "Select the text you want to replace first.", parent=dlg)
             return
         new_text = entry_new_text.get()
         if not new_text:
-            messagebox.showinfo("Edit Teks", "Teks baru tidak boleh kosong.", parent=dlg)
+            messagebox.showinfo("Edit Text", "New text cannot be empty.", parent=dlg)
             return
         try:
             result = self.tool.replace_text(
@@ -445,28 +445,28 @@ class EditActions:
                 whiteout=whiteout,
             )
         except ValueError as e:
-            messagebox.showerror("Edit Teks", str(e), parent=dlg)
+            messagebox.showerror("Edit Text", str(e), parent=dlg)
             return
 
-        msg = "Teks berhasil diganti."
+        msg = "Text replaced successfully."
         if result.get("warnings"):
-            msg += "\n\nCatatan:\n- " + "\n- ".join(result["warnings"])
-        messagebox.showinfo("Edit Teks", msg, parent=dlg)
+            msg += "\n\nNotes:\n- " + "\n- ".join(result["warnings"])
+        messagebox.showinfo("Edit Text", msg, parent=dlg)
 
         self._load_edit_page(dlg)
         self._refresh_preview()
 
     def _do_digital_replace_all(self, dlg, entry_new_text, auto_shrink, whiteout):
         if dlg.selected_span_idx is None or dlg.selected_span_idx >= len(dlg.spans):
-            messagebox.showinfo("Edit Teks", "Pilih teks yang mau diganti terlebih dahulu.", parent=dlg)
+            messagebox.showinfo("Edit Text", "Select the text you want to replace first.", parent=dlg)
             return
         orig_s = dlg.spans[dlg.selected_span_idx]
         old_text = orig_s["text"]
         new_text = entry_new_text.get()
         if not new_text:
-            messagebox.showinfo("Edit Teks", "Teks baru tidak boleh kosong.", parent=dlg)
+            messagebox.showinfo("Edit Text", "New text cannot be empty.", parent=dlg)
             return
-        if not messagebox.askyesno("Ganti Semua", f"Ganti semua kemunculan '{old_text}' di halaman ini dengan '{new_text}'?", parent=dlg):
+        if not messagebox.askyesno("Replace All", f"Replace all occurrences of '{old_text}' on this page with '{new_text}'?", parent=dlg):
             return
         try:
             result = self.tool.replace_all_text(
@@ -477,30 +477,30 @@ class EditActions:
                 whiteout=whiteout,
             )
         except ValueError as e:
-            messagebox.showerror("Edit Teks", str(e), parent=dlg)
+            messagebox.showerror("Edit Text", str(e), parent=dlg)
             return
 
-        msg = f"Berhasil mengganti {result['count']} teks."
+        msg = f"Successfully replaced {result['count']} text spans."
         if result.get("warnings"):
-            msg += "\n\nCatatan:\n- " + "\n- ".join(result["warnings"])
-        messagebox.showinfo("Edit Teks", msg, parent=dlg)
+            msg += "\n\nNotes:\n- " + "\n- ".join(result["warnings"])
+        messagebox.showinfo("Edit Text", msg, parent=dlg)
 
         self._load_edit_page(dlg)
         self._refresh_preview()
 
     def _do_digital_clear(self, dlg):
         if dlg.selected_span_idx is None or dlg.selected_span_idx >= len(dlg.spans):
-            messagebox.showinfo("Edit Teks", "Pilih teks yang mau dihapus terlebih dahulu.", parent=dlg)
+            messagebox.showinfo("Edit Text", "Select the text you want to delete first.", parent=dlg)
             return
-        if not messagebox.askyesno("Hapus Teks", "Hapus/tutup teks terpilih dengan warna putih?", parent=dlg):
+        if not messagebox.askyesno("Delete Text", "Delete/whiten the selected text?", parent=dlg):
             return
         s = dlg.spans[dlg.selected_span_idx]
         try:
             self.tool.whiteout_area(dlg.current_page, s["bbox"])
         except Exception as e:
-            messagebox.showerror("Edit Teks", f"Gagal menghapus teks: {e}", parent=dlg)
+            messagebox.showerror("Edit Text", f"Failed to delete text: {e}", parent=dlg)
             return
-        messagebox.showinfo("Edit Teks", "Teks berhasil dihapus.", parent=dlg)
+        messagebox.showinfo("Edit Text", "Text deleted successfully.", parent=dlg)
         self._load_edit_page(dlg)
         self._refresh_preview()
 
@@ -537,13 +537,13 @@ class EditActions:
     def _do_insert_custom_text(self, dlg, text_widget, x_var, y_var, size_var, font_var, bold_var, italic_var, color_var, whiteout_var):
         text = text_widget.get("1.0", tk.END).strip()
         if not text:
-            messagebox.showinfo("Tambah Teks", "Ketik teks yang ingin dimasukkan terlebih dahulu.", parent=dlg)
+            messagebox.showinfo("Add Text", "Type the text you want to insert first.", parent=dlg)
             return
         try:
             x = float(x_var.get())
             y = float(y_var.get())
         except ValueError:
-            messagebox.showerror("Tambah Teks", "Posisi X dan Y harus berupa angka.", parent=dlg)
+            messagebox.showerror("Add Text", "Position X and Y must be numbers.", parent=dlg)
             return
         try:
             fontsize = float(size_var.get())
@@ -551,12 +551,12 @@ class EditActions:
             fontsize = 12.0
 
         color_map = {
-            "Hitam": (0.0, 0.0, 0.0),
-            "Biru": (0.1, 0.3, 0.8),
-            "Merah": (0.85, 0.15, 0.15),
-            "Hijau": (0.1, 0.6, 0.2),
-            "Putih": (1.0, 1.0, 1.0),
-            "Abu-abu": (0.45, 0.45, 0.45),
+            "Black": (0.0, 0.0, 0.0),
+            "Blue": (0.1, 0.3, 0.8),
+            "Red": (0.85, 0.15, 0.15),
+            "Green": (0.1, 0.6, 0.2),
+            "White": (1.0, 1.0, 1.0),
+            "Gray": (0.45, 0.45, 0.45),
         }
         color = color_map.get(color_var.get(), (0.0, 0.0, 0.0))
 
@@ -587,10 +587,10 @@ class EditActions:
                 box_height=box_h,
             )
         except Exception as e:
-            messagebox.showerror("Tambah Teks", f"Gagal menambahkan teks: {e}", parent=dlg)
+            messagebox.showerror("Add Text", f"Failed to add text: {e}", parent=dlg)
             return
 
-        dlg.status_custom_lbl.config(text="\u2713 Teks berhasil disisipkan.", fg="#16a34a")
+        dlg.status_custom_lbl.config(text="\u2713 Text inserted successfully.", fg="#16a34a")
         dlg.selected_rect = None
         self._load_edit_page(dlg)
         self._render_edit_canvas(dlg)
@@ -601,7 +601,7 @@ class EditActions:
             x = float(x_var.get())
             y = float(y_var.get())
         except ValueError:
-            messagebox.showerror("Whiteout", "Posisi X dan Y harus berupa angka.", parent=dlg)
+            messagebox.showerror("Whiteout", "Position X and Y must be numbers.", parent=dlg)
             return
 
         if hasattr(dlg, "selected_rect") and dlg.selected_rect:
@@ -613,10 +613,10 @@ class EditActions:
         try:
             self.tool.whiteout_area(dlg.current_page, rect)
         except Exception as e:
-            messagebox.showerror("Whiteout", f"Gagal menutup area: {e}", parent=dlg)
+            messagebox.showerror("Whiteout", f"Failed to whiten area: {e}", parent=dlg)
             return
 
-        dlg.status_custom_lbl.config(text=f"\u2713 Area ({rect.x0:.1f}, {rect.y0:.1f}, {rect.x1:.1f}, {rect.y1:.1f}) berhasil ditutup putih.", fg="#16a34a")
+        dlg.status_custom_lbl.config(text=f"\u2713 Area ({rect.x0:.1f}, {rect.y0:.1f}, {rect.x1:.1f}, {rect.y1:.1f}) whitened successfully.", fg="#16a34a")
         dlg.selected_rect = None
         self._load_edit_page(dlg)
         self._render_edit_canvas(dlg)
@@ -628,68 +628,68 @@ class EditActions:
         default_page = (self.tool.selection[0] + 1) if self.tool.selection else 1
         img_path = tk.StringVar()
         dlg = tk.Toplevel(self.root)
-        dlg.title("Stempel / Tanda Tangan Gambar")
+        dlg.title("Image Stamp / Signature")
         dlg.transient(self.root)
         _safe_grab(dlg)
         dlg.configure(bg=BG)
-        tk.Label(dlg, text="Gambar (PNG/JPG tanda tangan / stempel):", font=FONT, bg=BG, fg=TEXT, anchor="w").pack(fill=tk.X, padx=16, pady=(12, 2))
+        tk.Label(dlg, text="Image (PNG/JPG signature / stamp):", font=FONT, bg=BG, fg=TEXT, anchor="w").pack(fill=tk.X, padx=16, pady=(12, 2))
         r1 = tk.Frame(dlg, bg=BG)
         r1.pack(fill=tk.X, padx=16)
         tk.Entry(r1, textvariable=img_path, font=FONT, relief=tk.FLAT,
                  highlightthickness=1, highlightbackground=BORDER).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        HoverButton(r1, "\u2026", command=lambda: img_path.set(native_open_file("Pilih gambar stempel", pdf_only=False)), small=True).pack(side=tk.LEFT, padx=(6, 0))
+        HoverButton(r1, "\u2026", command=lambda: img_path.set(native_open_file("Select stamp image", pdf_only=False)), small=True).pack(side=tk.LEFT, padx=(6, 0))
         r2 = tk.Frame(dlg, bg=BG)
         r2.pack(fill=tk.X, padx=16, pady=(8, 0))
-        tk.Label(r2, text="Halaman:", font=FONT_SMALL, bg=BG, fg=TEXT).pack(side=tk.LEFT)
+        tk.Label(r2, text="Page:", font=FONT_SMALL, bg=BG, fg=TEXT).pack(side=tk.LEFT)
         page_var = tk.StringVar(value=str(default_page))
         tk.Entry(r2, textvariable=page_var, width=4, font=FONT_SMALL, relief=tk.FLAT,
                  highlightthickness=1, highlightbackground=BORDER, justify=tk.CENTER).pack(side=tk.LEFT, padx=(4, 14))
-        tk.Label(r2, text=f"(maks {self.tool.page_count})", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED).pack(side=tk.LEFT)
+        tk.Label(r2, text=f"(max {self.tool.page_count})", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED).pack(side=tk.LEFT)
         btn_row = tk.Frame(dlg, bg=BG)
         btn_row.pack(pady=(12, 12))
-        HoverButton(btn_row, "Batal", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Cancel", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
 
         def do_stamp():
             p = img_path.get().strip()
             if not p:
-                messagebox.showinfo("Stempel", "Pilih file gambar dulu.", parent=dlg)
+                messagebox.showinfo("Stamp", "Select an image file first.", parent=dlg)
                 return
             try:
                 pno = int(page_var.get()) - 1
                 if not (0 <= pno < self.tool.page_count):
                     raise ValueError
             except ValueError:
-                messagebox.showerror("Stempel", "Nomor halaman tidak valid.", parent=dlg)
+                messagebox.showerror("Stamp", "Invalid page number.", parent=dlg)
                 return
             dlg.destroy()
             try:
                 self.tool.stamp_image(pno, p)
             except ValueError as e:
-                messagebox.showerror("Stempel", str(e), parent=self.root)
+                messagebox.showerror("Stamp", str(e), parent=self.root)
                 return
             self._refresh_preview()
 
-        HoverButton(btn_row, "Tempel di kanan-bawah", command=do_stamp, primary=True, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Stamp at bottom-right", command=do_stamp, primary=True, small=True).pack(side=tk.LEFT, padx=6)
 
-    # ---------- Fitur baru: Metadata ----------
+    # ---------- New feature: Metadata ----------
     def metadata_ui(self):
         if not self._require_doc():
             return
         meta = self.tool.get_metadata()
         size = meta.get("_file_size")
         dlg = tk.Toplevel(self.root)
-        dlg.title("Info Dokumen (Metadata)")
+        dlg.title("Document Info (Metadata)")
         dlg.transient(self.root)
         _safe_grab(dlg)
         dlg.configure(bg=BG)
-        head = f"{os.path.basename(self.tool.path or '')}  \u00b7  {meta.get('_page_count', 0)} halaman"
+        head = f"{os.path.basename(self.tool.path or '')}  \u00b7  {meta.get('_page_count', 0)} pages"
         if size:
             head += f"  \u00b7  {size / 1024:.1f} KB"
         if meta.get("_encrypted"):
-            head += "  \u00b7  \U0001f512 terenkripsi"
+            head += "  \u00b7  \U0001f512 encrypted"
         tk.Label(dlg, text=head, font=FONT_BOLD, bg=BG, fg=TEXT, anchor="w").pack(fill=tk.X, padx=16, pady=(12, 6))
-        fields = [("title", "Judul"), ("author", "Penulis"), ("subject", "Subjek"),
-                  ("keywords", "Kata kunci"), ("creator", "Aplikasi pembuat")]
+        fields = [("title", "Title"), ("author", "Author"), ("subject", "Subject"),
+                  ("keywords", "Keywords"), ("creator", "Creator application")]
         entries = {}
         for i, (key, label) in enumerate(fields):
             tk.Label(dlg, text=f"{label}:", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED, anchor="w").pack(fill=tk.X, padx=16, pady=(6, 0))
@@ -712,9 +712,9 @@ class EditActions:
             try:
                 self.tool.set_metadata(**kwargs)
             except Exception as ex:
-                messagebox.showerror("Metadata", f"Gagal: {ex}", parent=self.root)
+                messagebox.showerror("Metadata", f"Failed: {ex}", parent=self.root)
                 return
-            messagebox.showinfo("Metadata", "Metadata diperbarui.\nGunakan Simpan untuk menyimpan ke file.", parent=self.root)
+            messagebox.showinfo("Metadata", "Metadata updated.\nUse Save to save to file.", parent=self.root)
 
-        HoverButton(btn_row, "Batal", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
-        HoverButton(btn_row, "Terapkan", command=do_save, primary=True, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Cancel", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Apply", command=do_save, primary=True, small=True).pack(side=tk.LEFT, padx=6)

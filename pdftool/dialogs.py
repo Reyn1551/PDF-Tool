@@ -1,7 +1,7 @@
-"""Dialog pemilih file native (zenity) dengan fallback tkinter.
+"""Native file picker dialog (zenity) with tkinter fallback.
 
-Semua fungsi return path (str) atau list path; string kosong = dibatalkan user.
-None dari _zenity berarti zenity tidak terpasang -> fallback ke tkinter.
+All functions return a path (str) or list of paths; empty string = user cancelled.
+None from _zenity means zenity is not installed -> falls back to tkinter.
 """
 import os
 import subprocess
@@ -10,7 +10,7 @@ import tkinter as tk
 
 
 def _zenity(args, title):
-    # Lepaskan grab Tkinter aktif sementara agar tidak terjadi X11 grab deadlock / OS freeze
+    # Release active Tkinter grab temporarily to prevent X11 grab deadlock / OS freeze
     grabbed = None
     try:
         if tk._default_root:
@@ -26,10 +26,10 @@ def _zenity(args, title):
             capture_output=True, text=True, timeout=600,
         )
         if out.returncode != 0:
-            return ""  # Dibatalkan oleh user
+            return ""  # Cancelled by user
         return out.stdout.strip()
     except FileNotFoundError:
-        return None  # Zenity tidak terpasang di sistem, fallback ke filedialog
+        return None  # Zenity not installed on system, fall back to filedialog
     except subprocess.TimeoutExpired:
         return ""
     finally:
@@ -42,13 +42,13 @@ def _zenity(args, title):
 
 
 def native_open_file(title, pdf_only=True):
-    filt = ["--file-filter", "PDF files (*.pdf) | *.pdf *.PDF"] if pdf_only else ["--file-filter", "Semua file | *"]
+    filt = ["--file-filter", "PDF files (*.pdf) | *.pdf *.PDF"] if pdf_only else ["--file-filter", "All files | *"]
     r = _zenity(filt, title)
     if r is not None:
         return r
     try:
         from tkinter import filedialog
-        ft = [("PDF files", "*.pdf;*.PDF")] if pdf_only else [("Semua file", "*.*")]
+        ft = [("PDF files", "*.pdf;*.PDF")] if pdf_only else [("All files", "*.*")]
         return filedialog.askopenfilename(title=title, filetypes=ft) or ""
     except Exception:
         return ""
@@ -95,15 +95,15 @@ def native_open_dir(title):
 
 def native_open_files_images(title):
     r = _zenity(["--multiple", "--separator", "\n",
-                 "--file-filter", "Gambar | *.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp",
-                 "--file-filter", "Semua file | *"], title)
+                 "--file-filter", "Images | *.png *.jpg *.jpeg *.bmp *.gif *.tiff *.tif *.webp",
+                 "--file-filter", "All files | *"], title)
     if r is not None:
         return [p for p in r.split("\n") if p]
     try:
         from tkinter import filedialog
         files = filedialog.askopenfilenames(
             title=title,
-            filetypes=[("Gambar", "*.png *.jpg *.jpeg *.bmp *.gif *.tif *.tiff *.webp"), ("Semua file", "*.*")],
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp *.gif *.tif *.tiff *.webp"), ("All files", "*.*")],
         )
         return list(files) if files else []
     except Exception:
@@ -112,14 +112,14 @@ def native_open_files_images(title):
 
 def native_open_file_office(title):
     r = _zenity(["--file-filter",
-                 "Dokumen Office | *.docx *.doc *.xlsx *.xls *.pptx *.ppt *.odt *.ods *.odp *.rtf *.csv",
-                 "--file-filter", "Semua file | *"], title)
+                 "Office documents | *.docx *.doc *.xlsx *.xls *.pptx *.ppt *.odt *.ods *.odp *.rtf *.csv",
+                 "--file-filter", "All files | *"], title)
     if r is not None:
         return r
     try:
         from tkinter import filedialog
-        ft = [("Dokumen Office", "*.docx *.doc *.xlsx *.xls *.pptx *.ppt *.odt *.ods *.odp *.rtf *.csv"),
-              ("Semua file", "*.*")]
+        ft = [("Office documents", "*.docx *.doc *.xlsx *.xls *.pptx *.ppt *.odt *.ods *.odp *.rtf *.csv"),
+              ("All files", "*.*")]
         return filedialog.askopenfilename(title=title, filetypes=ft) or ""
     except Exception:
         return ""

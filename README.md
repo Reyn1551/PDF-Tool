@@ -1,77 +1,79 @@
 # PDF Tool 📄
 
-Aplikasi PDF desktop (Tkinter + PyMuPDF) dengan fitur lengkap gaya iLovePDF — merge,
-split, compress, konversi, edit teks, proteksi, dan lainnya. Berjalan langsung di Linux.
+A desktop PDF application (Tkinter + PyMuPDF) with a full iLovePDF-style feature
+set — merge, split, compress, convert, edit text, protect, and more. Runs natively
+on Linux.
 
-## 🚀 Cara Menjalankan (tanpa `python3 bla bla`)
+## 🚀 How to Run (no `python3 blah blah` needed)
 
-### Cara 1 — Klik dua kali / satu perintah
+### Option 1 - Double-click / single command
 ```bash
 ./run.sh
 ```
-Script ini otomatis: cek Python → pasang dependensi bila belum ada → jalankan aplikasi.
-Bisa juga **double-click** `run.sh` dari file manager (klik kanan → *Run*/Execute).
+The script automatically: checks Python → installs dependencies if missing →
+launches the app. You can also **double-click** `run.sh` in your file manager
+(right-click → Run/Execute).
 
-### Cara 2 — Pasang ke menu aplikasi (sekali saja)
+### Option 2 - Install into the application menu (once)
 ```bash
-./install.sh          # tambahkan "PDF Tool" ke menu aplikasi + ikon
-./install.sh --remove # hapus lagi
+./install.sh          # adds "PDF Tool" to the application menu + icon
+./install.sh --remove # removes it again
 ```
 
-## ✨ Fitur
+## ✨ Features
 
-| Kategori | Fitur |
+| Category | Tools |
 |---|---|
-| **Organisasi** | Hapus halaman · Sisip dari PDF lain · Merge · Split (rentang/bebas/banyak rentang) · Rotasi · Urut ulang · Balik urutan · Crop/potong tepi |
-| **Konversi** | PDF → Image (PNG/JPG, pilih DPI) · Image → PDF (auto/A4) · Office → PDF (Word/Excel/PPT via LibreOffice) · PDF → Word (.docx) · HTML → PDF · PDF → Text |
-| **Edit** | Edit teks digital presisi (font/warna/ukuran asli) · Tambah/timpa teks untuk PDF scan · Whiteout area · Stempel / tanda tangan gambar · Metadata dokumen |
-| **Keamanan & Optimasi** | Watermark teks/gambar · Password (AES-256) · Unlock password · Repair PDF rusak · Compress · Nomor halaman · Ekstrak gambar tertanam |
+| **Organize** | Delete pages · Insert from another PDF · Merge · Split (range/free/multi-range) · Rotate · Reorder · Reverse order · Crop pages |
+| **Convert** | PDF → Image (PNG/JPG, choose DPI) · Image → PDF (auto/A4) · Office → PDF (Word/Excel/PPT via LibreOffice) · PDF → Word (.docx) · HTML → PDF · PDF → Text |
+| **Edit** | Precise digital text editing (original font/color/size) · Add/overwrite text for scanned PDFs · Whiteout areas · Image stamps / signatures · Document metadata |
+| **Security & Optimization** | Text/image watermark · Password protection (AES-256) · Unlock password · Repair broken PDFs · Compress · Page numbers · Extract embedded images |
 
-Preview thumbnail semua halaman, pilih banyak halaman sekaligus (klik/klik-semua),
-scroll rodol mouse di mana pun, dialog password 3x percobaan.
+Thumbnail previews of every page, multi-page selection (click / select all),
+mouse-wheel scrolling anywhere, 3-attempt password dialog.
 
-## 📦 Dependensi
+## 📦 Dependencies
 
-Inti (dipasang otomatis oleh `run.sh`):
-- Python 3.8+ dengan `tkinter` (`sudo apt install python3-tk`)
+Core (installed automatically by `run.sh`):
+- Python 3.8+ with `tkinter` (`sudo apt install python3-tk`)
 - PyMuPDF
 
-Opsional:
-- Pillow, python-docx — ikon & PDF→Word
+Optional:
+- Pillow, python-docx — app icon & PDF→Word
 - LibreOffice (`sudo apt install libreoffice`) — Office→PDF
-- zenity — dialog file native (fallback otomatis ke tkinter)
+- zenity — native file dialogs (automatic tkinter fallback)
 
-## 🧪 Test
+## 🧪 Tests
 
 ```bash
 python3 tests/test_edit_text.py        # 52 checks
-python3 tests/test_new_features.py     # 24 checks (bugfix regresi + fitur baru)
+python3 tests/test_new_features.py     # 24 checks (bug regression + new features)
 python3 tests/test_pdf_to_image.py     # 13 checks
-python3 tests/test_pdf_to_image_gui.py # 15 checks (integrasi GUI)
+python3 tests/test_pdf_to_image_gui.py # 15 checks (GUI integration)
 ```
 
-## 🗂️ Struktur
+## 🗂️ Structure
 
 ```
-pdf_tool.py           Entry point (facade kompatibilitas)
-run.sh                Peluncur cepat
-install.sh            Installer pintasan menu aplikasi
-assets/icon.png       Ikon aplikasi
+pdf_tool.py           Entry point (compatibility facade)
+run.sh                Quick launcher
+install.sh            Application-menu shortcut installer
+assets/icon.png       Application icon
 
-pdftool/              Paket GUI (hasil refactor modular)
-├── theme.py            Design tokens — warna & font
-├── dialogs.py          Picker file native (zenity + fallback tkinter)
+pdftool/              GUI package (modular refactor)
+├── theme.py            Design tokens - colors & fonts
+├── dialogs.py          Native file pickers (zenity + tkinter fallback)
 ├── widgets.py          HoverButton, SidebarItem
-├── app.py              Kerangka aplikasi: layout, preview, status
-├── actions_organize.py Buka/hapus/merge/split/rotasi/urut/crop
+├── app.py              Application shell: layout, preview, status
+├── actions_organize.py Open/delete/merge/split/rotate/reorder/crop
 ├── actions_security.py Watermark, password/unlock, repair
-├── actions_export.py   Ekspor image/text, compress, nomor halaman
-├── actions_edit.py     Edit teks digital & scan, stempel, metadata
+├── actions_export.py   Export image/text, compress, page numbers
+├── actions_edit.py     Digital & scanned text editing, stamps, metadata
 └── actions_convert.py  Image/Office/HTML→PDF, PDF→Word
 
-pdf_ops.py            Operasi inti PDF murni PyMuPDF
-pdf_convert.py        Konversi antar-format (images/office/html/docx)
-tests/                Test suite (exit code 0 = lolos)
+pdf_ops.py            Core PDF operations, pure PyMuPDF
+pdf_convert.py        Format conversions (images/office/html/docx)
+tests/                Test suite (exit code 0 = pass)
 ```
 
-Menjalankan aplikasi: `./run.sh`, `python3 pdf_tool.py`, atau `python3 -m pdftool`.
+Run the app with: `./run.sh`, `python3 pdf_tool.py`, or `python3 -m pdftool`.

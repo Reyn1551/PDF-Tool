@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================
-#  PDF Tool — installer pintasan aplikasi (opsional)
-#  Menambahkan "PDF Tool" ke menu aplikasi Linux + ikon.
-#  Pakai:  ./install.sh        (uninstall: ./install.sh --remove)
+#  PDF Tool - optional application-shortcut installer
+#  Adds "PDF Tool" to the Linux application menu + icon.
+#  Usage:  ./install.sh       (uninstall: ./install.sh --remove)
 # ============================================================
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
@@ -16,7 +16,7 @@ ICON_FILE="${ICON_DIR}/pdf-tool.png"
 if [[ "${1:-}" == "--remove" ]]; then
     rm -f "$DESKTOP_FILE" "$ICON_FILE"
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
-    echo "PDF Tool dihapus dari menu aplikasi."
+    echo "PDF Tool removed from the application menu."
     exit 0
 fi
 
@@ -41,7 +41,7 @@ EOF
 chmod +x run.sh pdf_tool.py 2>/dev/null || true
 update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
-echo "✔ PDF Tool terpasang di menu aplikasi."
+echo "✔ PDF Tool installed into the application menu."
 echo "   Launcher : ${APP_DIR}/run.sh"
-echo "   Pintasan : ${DESKTOP_FILE}"
-echo "   Buka lewat menu aplikasi (cari 'PDF Tool') atau jalankan ./run.sh"
+echo "   Shortcut : ${DESKTOP_FILE}"
+echo "   Open via the application menu (search 'PDF Tool') or run ./run.sh"

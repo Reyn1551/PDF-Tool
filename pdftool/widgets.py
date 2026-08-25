@@ -1,4 +1,4 @@
-"""Widget kustom PDF Tool: tombol hover, item sidebar, helper jendela."""
+"""Custom widgets for PDF Tool: hover buttons, sidebar items, window helpers."""
 import os
 
 import tkinter as tk
@@ -18,7 +18,7 @@ def _safe_grab(win):
 
 
 def _set_app_icon(root):
-    """Pakai ikon PNG dari assets/ bila ada; diamkan jika tidak tersedia."""
+    """Use the PNG icon from assets/ if available; silently skip if not found."""
     try:
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
         if os.path.isfile(icon_path):
@@ -28,7 +28,7 @@ def _set_app_icon(root):
 
 
 class HoverButton(tk.Frame):
-    """Tombol flat dengan hover state."""
+    """Flat button with hover state."""
 
     def __init__(self, master, text, command=None, primary=False, danger=False, small=False,
                  padx=14, pady=7, tooltip=None):
@@ -99,7 +99,7 @@ class HoverButton(tk.Frame):
 
 
 class SidebarItem(tk.Frame):
-    """Item menu sidebar dengan hover."""
+    """Sidebar menu item with hover."""
 
     def __init__(self, master, text, command=None, accent=False):
         super().__init__(master, bg=SIDEBAR, cursor="hand2")

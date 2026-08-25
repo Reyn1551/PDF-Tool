@@ -1,7 +1,7 @@
-"""Inti aplikasi PDF Tool: layout, preview thumbnail, status, routing scroll.
+"""Core of PDF Tool: layout, thumbnail preview, status bar, scroll routing.
 
-Logika aksi (menu sidebar) ada di modul actions_* sebagai mixin; modul ini
-hanya kerangka UI supaya mudah dinavigasi.
+Action logic (sidebar menus) lives in actions_* modules as mixins; this module
+is purely the UI skeleton for easy navigation.
 """
 import os
 
@@ -54,13 +54,13 @@ class PDFToolApp(
         dot.pack(side=tk.LEFT, padx=(16, 8), pady=12)
         tk.Label(head, text="PDF Tool", font=FONT_TITLE, bg=SURFACE, fg=TEXT).pack(side=tk.LEFT)
 
-        self.file_label = tk.Label(head, text="Belum ada file", font=FONT_SMALL, bg=SURFACE,
+        self.file_label = tk.Label(head, text="No file open", font=FONT_SMALL, bg=SURFACE,
                                    fg=TEXT_MUTED)
         self.file_label.pack(side=tk.LEFT, padx=16)
 
-        self.btn_select_all = HoverButton(head, "Pilih Semua", command=self.select_all, small=True)
+        self.btn_select_all = HoverButton(head, "Select All", command=self.select_all, small=True)
         self.btn_select_all.pack(side=tk.RIGHT, padx=(4, 8), pady=8)
-        self.btn_save = HoverButton(head, "Simpan", command=self.save_as, primary=True, small=True)
+        self.btn_save = HoverButton(head, "Save", command=self.save_as, primary=True, small=True)
         self.btn_save.pack(side=tk.RIGHT, padx=(4, 16), pady=8)
 
     # ---------- Body ----------
@@ -69,7 +69,7 @@ class PDFToolApp(
         body.pack(fill=tk.BOTH, expand=True)
         self._build_sidebar(body)
         self._build_preview(body)
-        # Routing scroll cerdas: area mana pun di bawah kursor yang discroll.
+        # Smart scroll routing: whichever area is under the cursor gets scrolled.
         self.root.bind_all("<MouseWheel>", self._route_wheel)
         self.root.bind_all("<Button-4>", self._route_wheel)
         self.root.bind_all("<Button-5>", self._route_wheel)
@@ -107,18 +107,18 @@ class PDFToolApp(
             "inner", width=e.width))
 
         sb = inner
-        self._sidebar_group(sb, "FILE", [("Buka PDF", self.open_pdf, False)])
-        self._sidebar_group(sb, "ORGANISASI HALAMAN", [
-            ("Hapus Halaman", self.delete_pages, False),
-            ("Sisip dari PDF lain", self.insert_pages, False),
+        self._sidebar_group(sb, "FILE", [("Open PDF", self.open_pdf, False)])
+        self._sidebar_group(sb, "PAGE ORGANIZATION", [
+            ("Delete Pages", self.delete_pages, False),
+            ("Insert from Another PDF", self.insert_pages, False),
             ("Merge PDF", self.merge_pdf, False),
             ("Split PDF", self.split_pdf, False),
-            ("Rotasi 90\u00b0", lambda: self.rotate(90), False),
-            ("Urut Ulang", self.move_pages, False),
-            ("Balik Urutan", self.reverse_pages, False),
-            ("Crop / Potong Tepi", self.crop_pages_ui, False),
+            ("Rotate 90\u00b0", lambda: self.rotate(90), False),
+            ("Reorder Pages", self.move_pages, False),
+            ("Reverse Order", self.reverse_pages, False),
+            ("Crop Pages", self.crop_pages_ui, False),
         ])
-        self._sidebar_group(sb, "KONVERSI", [
+        self._sidebar_group(sb, "CONVERT", [
             ("PDF \u2192 Image (JPG/PNG)", self.export_to_image, False),
             ("Image \u2192 PDF", self.images_to_pdf_ui, False),
             ("Office \u2192 PDF", self.office_to_pdf_ui, False),
@@ -126,22 +126,22 @@ class PDFToolApp(
             ("HTML \u2192 PDF", self.html_to_pdf_ui, False),
             ("PDF \u2192 Text", self.export_text_ui, False),
         ])
-        self._sidebar_group(sb, "EDIT & ANOTASI", [
-            ("Edit Teks", self.edit_text, False),
-            ("Stempel / Tanda Tangan", self.stamp_image_ui, False),
-            ("Info Dokumen (Metadata)", self.metadata_ui, False),
+        self._sidebar_group(sb, "EDIT & ANNOTATE", [
+            ("Edit Text", self.edit_text, False),
+            ("Stamp / Signature", self.stamp_image_ui, False),
+            ("Document Info (Metadata)", self.metadata_ui, False),
         ])
-        self._sidebar_group(sb, "KEAMANAN & OPTIMASI", [
+        self._sidebar_group(sb, "SECURITY & OPTIMIZATION", [
             ("Watermark", self.watermark, False),
-            ("Password (Proteksi)", self.password, False),
-            ("Buka Password (Unlock)", self.unlock_pdf, False),
-            ("Repair PDF Rusak", self.repair_pdf_ui, False),
+            ("Protect with Password", self.password, False),
+            ("Unlock Password", self.unlock_pdf, False),
+            ("Repair Broken PDF", self.repair_pdf_ui, False),
             ("Compress", self.compress_pdf, False),
-            ("Nomor Halaman", self.page_numbers, False),
-            ("Ekstrak Gambar", self.extract_images_ui, False),
+            ("Page Numbers", self.page_numbers, False),
+            ("Extract Images", self.extract_images_ui, False),
         ])
         self.sidebar_items = []
-        # Fitur konversi/repair tidak butuh PDF terbuka -> tetap aktif.
+        # Conversion/repair features don't need an open PDF -> stay active.
         standalone = {"images_to_pdf_ui", "office_to_pdf_ui", "html_to_pdf_ui", "repair_pdf_ui"}
         for w in sb.winfo_children():
             if isinstance(w, SidebarItem):
@@ -174,7 +174,7 @@ class PDFToolApp(
     def _build_status(self):
         self.status = tk.Frame(self.root, bg=SURFACE, highlightthickness=1, highlightbackground=BORDER)
         self.status.pack(side=tk.BOTTOM, fill=tk.X)
-        self.status_label = tk.Label(self.status, text="Buka PDF untuk mulai", font=FONT_SMALL,
+        self.status_label = tk.Label(self.status, text="Open a PDF to start", font=FONT_SMALL,
                                      bg=SURFACE, fg=TEXT_MUTED, anchor="w", padx=16, pady=6)
         self.status_label.pack(fill=tk.X)
 
@@ -189,18 +189,18 @@ class PDFToolApp(
 
     def _refresh_status(self):
         if not self.tool.doc:
-            self.file_label.config(text="Belum ada file")
-            self.status_label.config(text="Buka PDF untuk mulai")
+            self.file_label.config(text="No file open")
+            self.status_label.config(text="Open a PDF to start")
             return
         name = os.path.basename(self.tool.path)
         sel = self.tool.selection
-        self.file_label.config(text=f"{name}  \u00b7  {self.tool.page_count} halaman")
+        self.file_label.config(text=f"{name}  \u00b7  {self.tool.page_count} pages")
         if sel:
             shown = ", ".join(str(i + 1) for i in sel[:15])
             more = f" \u2026 (+{len(sel) - 15})" if len(sel) > 15 else ""
-            self.status_label.config(text=f"Terpilih {len(sel)} halaman:  {shown}{more}", fg=ACCENT)
+            self.status_label.config(text=f"Selected {len(sel)} pages:  {shown}{more}", fg=ACCENT)
         else:
-            self.status_label.config(text="Klik halaman untuk memilih", fg=TEXT_MUTED)
+            self.status_label.config(text="Click pages to select", fg=TEXT_MUTED)
 
     def _refresh_preview(self):
         for w in self.frame.winfo_children():
@@ -212,13 +212,13 @@ class PDFToolApp(
         for i in range(self.tool.page_count):
             try:
                 thumb = self.tool.get_thumb(i)
-                # PyMuPDF docs: PPM mentah didukung PhotoImage(data=...) tanpa
-                # base64 & 60x lebih cepat dari PNG. PNG bytes mentah TIDAK
-                # diterima PhotoImage -> TclError -> galeri blank.
+                # PyMuPDF docs: raw PPM is supported by PhotoImage(data=...) without
+                # base64 & 60x faster than PNG. Raw PNG bytes are NOT accepted
+                # by PhotoImage -> TclError -> blank gallery.
                 photo = tk.PhotoImage(data=thumb.tobytes("ppm"), width=thumb.width, height=thumb.height)
                 self._build_card(i, photo)
             except Exception as e:
-                self._build_error_card(i, f"Render gagal: {e}")
+                self._build_error_card(i, f"Render failed: {e}")
         self.frame.update_idletasks()
         self._sync_enabled()
         self._refresh_status()
@@ -267,7 +267,7 @@ class PDFToolApp(
 
     def _require_doc(self):
         if not self.tool.doc:
-            messagebox.showinfo("PDF Tool", "Buka PDF dulu.", parent=self.root)
+            messagebox.showinfo("PDF Tool", "Open a PDF first.", parent=self.root)
             return False
         return True
 

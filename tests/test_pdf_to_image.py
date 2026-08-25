@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Test kuantitatif fitur Ekspor PDF ke Image (PNG/JPEG).
+"""Quantitative tests for the Export PDF to Image feature (PNG/JPEG).
 
-Verifikasi:
-1. Ekspor semua halaman PNG → jumlah & nama file benar
-2. Dimensi piksel proporsional terhadap DPI (96 vs 300)
-3. Ekspor subset halaman → hanya halaman itu yang ditulis
-4. JPEG valid (magic bytes, bisa dibuka ulang) dan lebih kecil dari PNG untuk konten gradien
-5. Error case: dokumen tertutup, indeks kosong, indeks di luar jangkauan
+Verifies:
+1. Exporting all pages to PNG -> correct count & filenames
+2. Pixel dimensions proportional to DPI (96 vs 300)
+3. Exporting a page subset -> only those pages are written
+4. Valid JPEG (magic bytes, reopenable) and smaller than PNG for gradient content
+5. Error cases: closed document, empty indices, out-of-range indices
 
-Jalankan:  python3 tests/test_pdf_to_image.py
-Exit code 0 = semua lolos.
+Run:  python3 tests/test_pdf_to_image.py
+Exit code 0 = all checks passed.
 """
 import os
 import sys
@@ -37,7 +37,7 @@ def check(name, cond, detail=""):
 
 
 def _write_png(path, w, h, getpx):
-    """Tulis PNG RGB 8-bit sederhana (tanpa dependency eksternal)."""
+    """Write a simple 8-bit RGB PNG (no external dependencies)."""
     raw = bytearray()
     for y in range(h):
         raw.append(0)
@@ -60,12 +60,12 @@ def _write_png(path, w, h, getpx):
 
 
 def make_sample(path):
-    """PDF 4 halaman A5 berisi teks penanda nomor + halaman 4 berisi gradien warna."""
+    """4-page A5 PDF with number markers; page 4 contains a color gradient."""
     doc = fitz.open()
     for i in range(4):
         page = doc.new_page(width=420, height=595)  # A5
-        page.insert_text((72, 100), f"Halaman {i + 1}", fontsize=18)
-    # Gradien 2D halus memenuhi halaman 4 agar JPEG terlihat lebih kecil dari PNG
+        page.insert_text((72, 100), f"Page {i + 1}", fontsize=18)
+    # Smooth 2D gradient fills page 4 so JPEG looks smaller than PNG
     page = doc.load_page(3)
     W, H = 210, 297
     grad = os.path.join(os.path.dirname(path), "_grad.png")
@@ -86,7 +86,7 @@ def make_sample(path):
 
 def main():
     tmp = tempfile.mkdtemp(prefix="pdf2img_test_")
-    pdf_path = os.path.join(tmp, "sampel.pdf")
+    pdf_path = os.path.join(tmp, "sample.pdf")
     make_sample(pdf_path)
 
     tool = PDFTool()
@@ -95,22 +95,22 @@ def main():
     outdir = os.path.join(tmp, "out_png")
     os.makedirs(outdir)
 
-    print("== 1. Ekspor semua halaman PNG ==")
+    print("== 1. Export all pages to PNG ==")
     written = tool.export_images([0, 1, 2, 3], outdir, fmt="png", dpi=96)
-    check("jumlah file = 4", len(written) == 4, f"got {len(written)}")
+    check("file count = 4", len(written) == 4, f"got {len(written)}")
     names = sorted(os.listdir(outdir))
     expect_names = [
-        "sampel_halaman-1.png", "sampel_halaman-2.png",
-        "sampel_halaman-3.png", "sampel_halaman-4.png",
+        "sample_page-1.png", "sample_page-2.png",
+        "sample_page-3.png", "sample_page-4.png",
     ]
-    check("nama file benar", names == expect_names, f"got {names}")
+    check("filenames correct", names == expect_names, f"got {names}")
 
-    print("== 2. Dimensi piksel sesuai DPI ==")
-    page_w = 420.0  # pt lebar halaman A5 sampel
+    print("== 2. Pixel dimensions match DPI ==")
+    page_w = 420.0  # pt width of the A5 sample page
     pix96 = fitz.Pixmap(written[0])
     exp96 = round(page_w * 96 / 72)
     check(
-        "lebar @96dpi ~560px",
+        "width @96dpi ~560px",
         abs(pix96.width - exp96) <= 1,
         f"got {pix96.width}, expect ~{exp96}",
     )
@@ -120,33 +120,33 @@ def main():
     pix300 = fitz.Pixmap(written300[0])
     exp300 = round(page_w * 300 / 72)
     check(
-        "lebar @300dpi ~1750px",
+        "width @300dpi ~1750px",
         abs(pix300.width - exp300) <= 1,
         f"got {pix300.width}, expect ~{exp300}",
     )
     ratio = pix300.width / max(1, pix96.width)
-    check("rasio 300/96 ~3.125", abs(ratio - 300 / 96) < 0.05, f"got {ratio:.3f}")
+    check("ratio 300/96 ~3.125", abs(ratio - 300 / 96) < 0.05, f"got {ratio:.3f}")
 
-    print("== 3. Ekspor subset halaman ==")
+    print("== 3. Export page subset ==")
     outsub = os.path.join(tmp, "out_sub")
     os.makedirs(outsub)
     written_sub = tool.export_images([0, 2], outsub, fmt="png", dpi=96)
     subnames = sorted(os.listdir(outsub))
-    check("subset = 2 file", len(subnames) == 2 and len(written_sub) == 2, f"got {subnames}")
+    check("subset = 2 files", len(subnames) == 2 and len(written_sub) == 2, f"got {subnames}")
     check(
-        "hanya halaman 1 & 3",
-        subnames == ["sampel_halaman-1.png", "sampel_halaman-3.png"],
+        "only pages 1 & 3",
+        subnames == ["sample_page-1.png", "sample_page-3.png"],
         f"got {subnames}",
     )
 
-    print("== 4. JPEG valid & lebih kecil ==")
+    print("== 4. JPEG valid & smaller ==")
     outjpg = os.path.join(tmp, "out_jpg")
     os.makedirs(outjpg)
     written_jpg = tool.export_images([3], outjpg, fmt="jpeg", dpi=150, quality=80)
     jpg_path = written_jpg[0]
     with open(jpg_path, "rb") as f:
         head = f.read(3)
-    check("magic bytes JPEG", head[:2] == b"\xff\xd8", f"got {head!r}")
+    check("JPEG magic bytes", head[:2] == b"\xff\xd8", f"got {head!r}")
     reopened = None
     try:
         reopened = fitz.Pixmap(jpg_path)
@@ -154,30 +154,30 @@ def main():
     except Exception as e:
         ok_open = False
         print(f"    reopen error: {e}")
-    check("JPEG bisa dibuka ulang PyMuPDF", ok_open)
+    check("JPEG reopenable by PyMuPDF", ok_open)
     png_counterpart = os.path.join(
         tmp, "out_cmp"
     )
     os.makedirs(png_counterpart)
     tool.export_images([3], png_counterpart, fmt="png", dpi=150)
     sz_jpg = os.path.getsize(jpg_path)
-    sz_png = os.path.getsize(os.path.join(png_counterpart, "sampel_halaman-4.png"))
-    check("JPEG lebih kecil dari PNG (gradien)", sz_jpg < sz_png, f"jpg={sz_jpg} png={sz_png}")
+    sz_png = os.path.getsize(os.path.join(png_counterpart, "sample_page-4.png"))
+    check("JPEG smaller than PNG (gradient)", sz_jpg < sz_png, f"jpg={sz_jpg} png={sz_png}")
 
-    print("== 5. Error case ==")
+    print("== 5. Error cases ==")
     err = None
     try:
         tool.export_images([], outdir)
     except ValueError as e:
         err = e
-    check("indeks kosong -> ValueError", isinstance(err, ValueError), f"got {err}")
+    check("empty indices -> ValueError", isinstance(err, ValueError), f"got {err}")
 
     err = None
     try:
         tool.export_images([99], outdir)
     except ValueError as e:
         err = e
-    check("indeks di luar jangkauan -> ValueError", isinstance(err, ValueError), f"got {err}")
+    check("out-of-range index -> ValueError", isinstance(err, ValueError), f"got {err}")
 
     closed_tool = PDFTool()
     err = None
@@ -185,7 +185,7 @@ def main():
         closed_tool.export_images([0], outdir)
     except ValueError as e:
         err = e
-    check("dokumen tertutup -> ValueError", isinstance(err, ValueError), f"got {err}")
+    check("closed document -> ValueError", isinstance(err, ValueError), f"got {err}")
 
     tool.close()
 

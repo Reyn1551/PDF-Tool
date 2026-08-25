@@ -3,7 +3,7 @@ import os
 import math
 import glob
 
-# ---------- Fallback font (untuk edit teks) ----------
+# ---------- Fallback fonts (for text editing) ----------
 _FONT_ROOTS = [
     "/usr/share/fonts",
     "/usr/local/share/fonts",
@@ -13,7 +13,7 @@ _FONT_ROOTS = [
 
 
 def _find_system_font(bold=False, italic=False, serif=False, mono=False):
-    """Cari font TTF/OTF di sistem yang cocok dengan gaya. Return path atau None."""
+    """Find a matching TTF/OTF system font by style. Returns a path or None."""
     if mono:
         names = ["DejaVuSansMono-Bold.ttf" if bold else "DejaVuSansMono.ttf"]
     elif serif:
@@ -42,7 +42,7 @@ def _find_system_font(bold=False, italic=False, serif=False, mono=False):
 
 
 def _base14_code(bold=False, italic=False, serif=False, mono=False):
-    """Kode Base-14 PyMuPDF sesuai gaya (fallback terakhir)."""
+    """PyMuPDF Base-14 font code matching the style (last-resort fallback)."""
     key = (bool(bold), bool(italic))
     if mono:
         return {(False, False): "cour", (True, False): "cobo", (False, True): "coit", (True, True): "cobi"}[key]
@@ -56,13 +56,13 @@ class PDFTool:
         self.doc = None
         self.path = None
         self._selection = set()
-        self.was_encrypted = False  # dokumen terenkripsi saat dibuka?
+        self.was_encrypted = False  # was the document encrypted when opened?
 
     def open(self, path, password=None):
         try:
             doc = fitz.open(path)
         except Exception as e:
-            raise ValueError(f"Gagal membuka PDF: {e}")
+            raise ValueError(f"Failed to open PDF: {e}")
         encrypted = bool(doc.needs_pass)
         if doc.needs_pass:
             if not password:
@@ -70,7 +70,7 @@ class PDFTool:
                 raise ValueError("NEEDS_PASSWORD")
             if not doc.authenticate(password):
                 doc.close()
-                raise ValueError("Password salah.")
+                raise ValueError("Incorrect password.")
         self.close()
         self.doc = doc
         self.path = path
@@ -113,7 +113,7 @@ class PDFTool:
 
     def delete_pages(self, indexes):
         if not indexes:
-            raise ValueError("Tidak ada halaman dipilih.")
+            raise ValueError("No pages selected.")
         indexes = sorted(set(indexes))
         for i in reversed(indexes):
             self.doc.delete_page(i)
@@ -123,11 +123,11 @@ class PDFTool:
         other = fitz.open(other_path)
         try:
             if position < 0 or position > self.page_count:
-                raise ValueError("Posisi sisip tidak valid.")
+                raise ValueError("Invalid insert position.")
             src_indexes = sorted(set(src_indexes))
             for i in src_indexes:
                 if i < 0 or i >= other.page_count:
-                    raise ValueError(f"Halaman {i+1} tidak ada di PDF sumber.")
+                    raise ValueError(f"Page {i+1} does not exist in the source PDF.")
             other.select(src_indexes)
             self.doc.insert_pdf(other, start_at=position)
         finally:
@@ -136,7 +136,7 @@ class PDFTool:
 
     def merge(self, paths):
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka. Buka/beri dokumen induk dulu.")
+            raise ValueError("No PDF is open. Open or provide a parent document first.")
         for p in paths:
             src = fitz.open(p)
             try:
@@ -147,7 +147,7 @@ class PDFTool:
 
     def split(self, start, end):
         if start < 0 or end >= self.page_count or start > end:
-            raise ValueError("Rentang halaman tidak valid.")
+            raise ValueError("Invalid page range.")
         out = fitz.open()
         out.insert_pdf(self.doc, from_page=start, to_page=end)
         return out
@@ -159,28 +159,28 @@ class PDFTool:
 
     def rotate(self, indexes, angle):
         if not indexes:
-            raise ValueError("Tidak ada halaman dipilih.")
+            raise ValueError("No pages selected.")
         for i in indexes:
             page = self.doc.load_page(i)
             page.set_rotation((page.rotation + angle) % 360)
 
     def move_pages(self, indexes, target_pos):
         if not indexes:
-            raise ValueError("Tidak ada halaman dipilih.")
+            raise ValueError("No pages selected.")
         indexes = sorted(set(indexes))
         count = len(indexes)
         total = self.page_count
         if target_pos < 0 or target_pos > total - count:
-            raise ValueError("Posisi tujuan tidak valid.")
+            raise ValueError("Invalid target position.")
         remaining = [i for i in range(total) if i not in indexes]
-        # sisipkan blok pilihan ke posisi target_pos di daftar remaining
+        # insert the selected block at target_pos within the remaining list
         new_order = remaining[:target_pos] + indexes + remaining[target_pos:]
         self.doc.select(new_order)
         self._selection.clear()
 
     def add_watermark(self, text=None, image_path=None, opacity=0.3, angle=45):
         if not text and not image_path:
-            raise ValueError("Isi teks watermark atau pilih gambar.")
+            raise ValueError("Provide watermark text or choose an image.")
         for pno in range(self.page_count):
             page = self.doc.load_page(pno)
             rect = page.rect
@@ -201,7 +201,7 @@ class PDFTool:
                 )
             elif image_path:
                 if not os.path.exists(image_path):
-                    raise ValueError("File gambar tidak ditemukan.")
+                    raise ValueError("Image file not found.")
                 img = fitz.Pixmap(image_path)
                 w = rect.width * 0.4
                 h = w * img.height / img.width
@@ -213,14 +213,14 @@ class PDFTool:
                 img = None
 
     def _save_over_original(self, target, **save_kwargs):
-        """Simpan dokumen dengan aman, termasuk menimpa file asli yang sedang terbuka.
+        """Save the document safely, including overwriting the currently open file.
 
-        PyMuPDF melarang doc.save() ke path asal tanpa incremental=True (error
-        "save to original must be incremental"). Trik: simpan ke file sementara
-        di folder yang sama lalu replace secara atomik.
+        PyMuPDF forbids doc.save() to the original path without incremental=True
+        ("save to original must be incremental"). Trick: save to a temp file in
+        the same folder, then atomically replace.
         """
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         if target and os.path.abspath(target) == os.path.abspath(self.path or ""):
             tmp = target + ".tmp-save.pdf"
             self.doc.save(tmp, **save_kwargs)
@@ -230,7 +230,7 @@ class PDFTool:
 
     def protect(self, password, owner_password=None):
         if not password:
-            raise ValueError("Password tidak boleh kosong.")
+            raise ValueError("Password cannot be empty.")
         owner = owner_password or password
         self._save_over_original(
             self.path or "_protected.pdf",
@@ -238,13 +238,13 @@ class PDFTool:
         )
 
     def unlock(self, out_path=None):
-        """Simpan salinan PDF tanpa proteksi (dokumen harus sudah ter-autentikasi)."""
+        """Save an unprotected copy (document must already be authenticated)."""
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         if not (self.was_encrypted or self.doc.is_encrypted or self.doc.needs_pass):
-            raise ValueError("PDF ini tidak terenkripsi — tidak ada yang perlu dibuka.")
+            raise ValueError("This PDF is not encrypted - nothing to unlock.")
         target = out_path or (os.path.splitext(self.path)[0] + "_unlocked.pdf")
-        # permissions=-1 & encryption NONE -> salinan bebas proteksi
+        # permissions=-1 & encryption NONE -> restriction-free copy
         self._save_over_original(target, encryption=fitz.PDF_ENCRYPT_NONE, permissions=int(-1))
         return target
 
@@ -254,13 +254,13 @@ class PDFTool:
     def save_to_bytes(self):
         return self.doc.tobytes(garbage=3, deflate=True)
 
-    # ---------- Fitur baru: Edit Teks ----------
+    # ---------- New feature: Text Editing ----------
 
     def get_text_spans(self, page_index):
-        """Ambil daftar span teks pada halaman (untuk fitur edit teks).
+        """Collect the list of text spans on a page (for the text-editing feature).
 
-        Setiap span: text, bbox, origin (baseline), font, size, color (sRGB int),
-        alpha, flags, dir (arah baris).
+        Each span: text, bbox, origin (baseline), font, size, color (sRGB int),
+        alpha, flags, dir (line direction).
         """
         page = self.doc.load_page(page_index)
         spans = []
@@ -286,7 +286,7 @@ class PDFTool:
         return spans
 
     def _page_font_ref(self, page, basefont):
-        """Cari reference name ('/F1') font di page yang cocok dengan basefont."""
+        """Find the page font reference name ('/F1') matching basefont."""
         for f in page.get_fonts(full=True):
             if f[3] == basefont:
                 name = f[4]
@@ -294,7 +294,7 @@ class PDFTool:
         return None
 
     def _font_from_page(self, page, refname):
-        """Buat fitz.Font dari font yang sudah ada di page (untuk pengukuran lebar)."""
+        """Build a fitz.Font from a font already on the page (for width measuring)."""
         xref = None
         for f in page.get_fonts(full=True):
             name = f[4]
@@ -313,7 +313,7 @@ class PDFTool:
         return fitz.Font(fontname="helv")
 
     def _resolve_font(self, page, span, bold, italic, serif, mono, warnings):
-        """Tentukan font untuk insert: font asli page > fontfile sistem > Base-14."""
+        """Pick the insertion font: page original > system fontfile > Base-14."""
         basefont = span["font"]
         refname = self._page_font_ref(page, basefont)
         if refname:
@@ -321,11 +321,11 @@ class PDFTool:
         path = _find_system_font(bold=bold, italic=italic, serif=serif, mono=mono)
         if path:
             warnings.append(
-                f"Font asli '{basefont}' tidak tersedia untuk penyisipan; fallback: {os.path.basename(path)}"
+                f"Original font '{basefont}' unavailable for insertion; falling back to {os.path.basename(path)}"
             )
             return "f0", path, os.path.basename(path)
         code = _base14_code(bold, italic, serif, mono)
-        warnings.append(f"Font asli '{basefont}' tidak tersedia; fallback Base-14: {code}")
+        warnings.append(f"Original font '{basefont}' unavailable; Base-14 fallback: {code}")
         return code, None, code
 
     def replace_text(
@@ -339,22 +339,22 @@ class PDFTool:
         custom_fontsize=None,
         custom_color=None,
     ):
-        """Ganti teks satu span dengan teks baru, mempertahankan gaya asli.
+        """Replace a single text span while preserving its original style.
 
-        Presisi: font/size/color/baseline disalin dari span asli. Mendukung
-        auto_shrink untuk menyesuaikan ukuran font otomatis jika teks lebih panjang,
-        dan whiteout untuk membersihkan latar belakang secara menyeluruh.
+        Precision: font/size/color/baseline are copied from the original span.
+        Supports auto_shrink to automatically fit longer text, and whiteout to
+        thoroughly clean the background behind it.
 
         Returns dict: {ok, font_used, warnings, replaced}
         """
         page = self.doc.load_page(page_index)
         spans = self.get_text_spans(page_index)
         if span_index < 0 or span_index >= len(spans):
-            raise ValueError("Pilihan teks tidak valid.")
+            raise ValueError("Invalid text selection.")
         span = spans[span_index]
         old_text = span["text"]
         if not new_text:
-            raise ValueError("Teks baru tidak boleh kosong.")
+            raise ValueError("New text cannot be empty.")
         if new_text == old_text:
             return {"ok": True, "font_used": span["font"], "warnings": [], "replaced": False}
 
@@ -373,7 +373,7 @@ class PDFTool:
         warnings = []
         fontname, fontfile, font_used = self._resolve_font(page, span, bold, italic, serif, mono, warnings)
 
-        # Ukur lebar teks baru dengan font terpilih
+        # Measure new-text width using the chosen font
         try:
             if fontfile:
                 probe = fitz.Font(fontfile=fontfile)
@@ -390,15 +390,15 @@ class PDFTool:
                 scale_factor = (bbox.width) / new_len
                 size = max(5.0, size * scale_factor)
                 warnings.append(
-                    f"Ukuran font disesuaikan ({span['size']:.1f}pt \u2192 {size:.1f}pt) agar pas di dalam area."
+                    f"Font size adjusted ({span['size']:.1f}pt \u2192 {size:.1f}pt) to fit the area."
                 )
             elif not allow_longer:
                 raise ValueError(
-                    f"Teks baru terlalu panjang: {new_len:.1f}pt, area asli {bbox.width:.1f}pt.\n"
-                    "Akan menimpa teks lain. Persingkat teks, aktifkan penyesuaian ukuran otomatis, atau edit per kata."
+                    f"New text is too long: {new_len:.1f}pt vs. original area {bbox.width:.1f}pt.\n"
+                    "It would overlap other text. Shorten the text, enable auto-fit, or edit word by word."
                 )
 
-        # Hapus teks asli dari stream dokumen
+        # Remove the original text from the document stream
         page.add_redact_annot(bbox)
         page.apply_redactions(
             images=fitz.PDF_REDACT_IMAGE_NONE,
@@ -409,7 +409,7 @@ class PDFTool:
         if whiteout:
             page.draw_rect(bbox, fill=(1, 1, 1), color=None, overlay=True)
 
-        # Sisipkan teks baru dengan properti asli
+        # Insert the new text with the original properties
         kwargs = {
             "fontsize": size,
             "color": color,
@@ -430,14 +430,14 @@ class PDFTool:
         return {"ok": True, "font_used": font_used, "warnings": warnings, "replaced": True}
 
     def replace_all_text(self, page_index, old_text, new_text, auto_shrink=True, whiteout=True):
-        """Ganti semua span teks di halaman yang persis atau mengandung old_text.
+        """Replace every span on the page equal to or containing old_text.
 
-        PENTING: setiap replace_text melakukan apply_redactions yang mengubah
-        struktur span di halaman. Kalau kita memproses indeks berurutan ke bawah,
-        indeks span setelah titik edit bergeser -> teks salah sasaran / hilang
-        (bug korupsi data). Solusi: kumpulkan dulu semua indeks yang cocok pada
-        snapshot awal, lalu proses dari indeks TERBESAR; penghapusan hanya
-        menggeser span di belakangnya, jadi indeks yang lebih kecil tetap valid.
+        IMPORTANT: each replace_text call runs apply_redactions, which reshapes
+        the page's span structure. Processing indices top-down shifts spans after
+        each edit -> wrong targets / lost text (data-corruption bug). Solution:
+        collect all matching indices from the initial snapshot, then process from
+        the LARGEST index down; removals only shift later spans, so smaller
+        indices stay valid.
         """
         spans = self.get_text_spans(page_index)
         matched = [idx for idx, s in enumerate(spans) if old_text in s["text"]]
@@ -469,14 +469,14 @@ class PDFTool:
         box_width=None,
         box_height=None,
     ):
-        """Tambahkan teks bebas pada koordinat (x, y) halaman.
+        """Insert free-form text at page coordinates (x, y).
 
-        Mendukung teks multi-baris dan opsi whiteout (latar belakang putih)
-        untuk menimpa teks pada dokumen scan / gambar maupun digital.
+        Supports multi-line text and a whiteout option (white background) to
+        overwrite text on scanned/image documents as well as digital ones.
         """
         page = self.doc.load_page(page_index)
         if not text:
-            raise ValueError("Teks tidak boleh kosong.")
+            raise ValueError("Text cannot be empty.")
 
         font_code = _base14_code(
             bold=bold,
@@ -530,7 +530,7 @@ class PDFTool:
         return {"ok": True, "rect": rect, "lines_count": len(lines)}
 
     def whiteout_area(self, page_index, rect):
-        """Hapus / tutup area tertentu dengan warna putih solid."""
+        """Erase / cover a given area with solid white."""
         page = self.doc.load_page(page_index)
         page.add_redact_annot(rect, fill=(1, 1, 1))
         page.apply_redactions(
@@ -541,12 +541,12 @@ class PDFTool:
         page.draw_rect(rect, fill=(1, 1, 1), color=None, overlay=True)
         return {"ok": True}
 
-    # ---------- Fitur baru: Compress & Nomor Halaman ----------
+    # ---------- New features: Compress & Page Numbers ----------
 
     def compress(self, path=None, images=True):
-        """Kompres dokumen: garbage collection, deflate, subset font, rewrite image."""
+        """Compress the document: garbage collection, deflate, font subsetting, image rewrite."""
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         if images:
             try:
                 self.doc.rewrite_images()
@@ -560,7 +560,7 @@ class PDFTool:
         self._save_over_original(target, garbage=4, deflate=True)
 
     def add_page_numbers(self, start=1, position="bottom", fontsize=11, color=(0.45, 0.45, 0.45)):
-        """Tambahkan nomor halaman pada setiap halaman."""
+        """Add page numbers to every page."""
         for i in range(self.page_count):
             page = self.doc.load_page(i)
             rect = page.rect
@@ -576,31 +576,31 @@ class PDFTool:
                 p = fitz.Point((rect.width - w) / 2, rect.height - 24)
             page.insert_text(p, text, fontsize=fontsize, color=color, overlay=True)
 
-    # ---------- Fitur baru: Ekspor ke Image ----------
+    # ---------- New feature: Export to Images ----------
 
     def export_images(self, page_indices, out_dir, fmt="png", dpi=150, quality=90, progress_cb=None):
-        """Ekspor halaman-halaman menjadi file gambar PNG/JPEG.
+        """Export pages as PNG/JPEG image files.
 
-        Return daftar path file yang ditulis.
+        Returns the list of written file paths.
         """
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         if not page_indices:
-            raise ValueError("Tidak ada halaman yang dipilih.")
+            raise ValueError("No pages selected.")
         fmt = (fmt or "png").lower()
         if fmt not in ("png", "jpeg", "jpg"):
-            raise ValueError(f"Format tidak didukung: {fmt} (gunakan png/jpeg)")
+            raise ValueError(f"Unsupported format: {fmt} (use png/jpeg)")
         ext = "jpg" if fmt in ("jpeg", "jpg") else "png"
         for idx in page_indices:
             if not (0 <= idx < self.page_count):
-                raise ValueError(f"Nomor halaman tidak valid: {idx + 1}")
-        base = os.path.splitext(os.path.basename(self.path))[0] if self.path else "halaman"
+                raise ValueError(f"Invalid page number: {idx + 1}")
+        base = os.path.splitext(os.path.basename(self.path))[0] if self.path else "page"
         written = []
         total = len(page_indices)
         for i, idx in enumerate(page_indices):
             page = self.doc.load_page(idx)
             pix = page.get_pixmap(dpi=dpi)
-            out_path = os.path.join(out_dir, f"{base}_halaman-{idx + 1}.{ext}")
+            out_path = os.path.join(out_dir, f"{base}_page-{idx + 1}.{ext}")
             if ext == "jpg":
                 pix.save(out_path, jpg_quality=quality)
             else:
@@ -611,46 +611,46 @@ class PDFTool:
                 progress_cb(i + 1, total)
         return written
 
-    # ---------- Fitur baru: Organisasi & Lain-lain ----------
+    # ---------- New features: Organization & More ----------
 
     def reverse_pages(self):
-        """Balik urutan semua halaman (terakhir jadi pertama)."""
+        """Reverse the order of all pages (last becomes first)."""
         if not self.doc or self.page_count < 2:
             return
         self.doc.select(list(range(self.page_count - 1, -1, -1)))
         self._selection.clear()
 
     def crop_pages(self, indexes=None, left=0.05, top=0.05, right=0.05, bottom=0.05):
-        """Potong tepi halaman (nilai rasio 0-0.4 dari lebar/tinggi halaman)."""
+        """Trim page edges (ratio values 0-0.45 of page width/height)."""
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
-        for name, val in (("kiri", left), ("atas", top), ("kanan", right), ("bawah", bottom)):
+            raise ValueError("No PDF is open.")
+        for name, val in (("left", left), ("top", top), ("right", right), ("bottom", bottom)):
             if not (0 <= float(val) <= 0.45):
-                raise ValueError(f"Rasio potong {name} harus 0 - 0.45.")
+                raise ValueError(f"{name} crop ratio must be 0 - 0.45.")
         targets = sorted(set(indexes)) if indexes else list(range(self.page_count))
         if not targets:
-            raise ValueError("Tidak ada halaman dipilih.")
+            raise ValueError("No pages selected.")
         for i in targets:
             if not (0 <= i < self.page_count):
-                raise ValueError(f"Nomor halaman tidak valid: {i + 1}")
+                raise ValueError(f"Invalid page number: {i + 1}")
             page = self.doc.load_page(i)
             r = page.rect
             dx, dy = r.width * float(left), r.height * float(top)
             dx2, dy2 = r.width * float(right), r.height * float(bottom)
             box = fitz.Rect(r.x0 + dx, r.y0 + dy, r.x1 - dx2, r.y1 - dy2)
             if box.is_empty or box.width < 20 or box.height < 20:
-                raise ValueError(f"Hasil potong halaman {i + 1} terlalu kecil.")
+                raise ValueError(f"Cropped page {i + 1} would be too small.")
             page.set_cropbox(box)
 
     def stamp_image(self, page_index, image_path, x=None, y=None, width_ratio=0.3):
-        """Tempel gambar (tanda tangan / stempel) pada halaman.
+        """Stamp an image (signature / stamp) onto a page.
 
-        x, y = posisi pojok kiri-atas dalam pt. Default: kanan-bawah.
+        x, y = top-left corner position in pt. Defaults to bottom-right.
         """
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         if not image_path or not os.path.exists(image_path):
-            raise ValueError("File gambar tidak ditemukan.")
+            raise ValueError("Image file not found.")
         page = self.doc.load_page(page_index)
         rect = page.rect
         try:
@@ -658,7 +658,7 @@ class PDFTool:
             ratio = img.height / img.width if img.width else 1.0
             img = None
         except Exception as e:
-            raise ValueError(f"Gagal membaca gambar: {e}")
+            raise ValueError(f"Failed to read image: {e}")
         w = rect.width * float(width_ratio)
         h = w * ratio
         if x is None:
@@ -673,7 +673,7 @@ class PDFTool:
 
     def get_metadata(self):
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         meta = dict(self.doc.metadata or {})
         meta["_page_count"] = self.page_count
         meta["_encrypted"] = bool(self.doc.is_encrypted)
@@ -685,9 +685,9 @@ class PDFTool:
         return meta
 
     def set_metadata(self, **fields):
-        """Set metadata dokumen: title, author, subject, keywords, creator, producer."""
+        """Set document metadata: title, author, subject, keywords, creator, producer."""
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         allowed = {"title", "author", "subject", "keywords", "creator", "producer"}
         meta = self.doc.metadata or {}
         for k, v in fields.items():
@@ -696,15 +696,15 @@ class PDFTool:
         self.doc.set_metadata(meta)
 
     def extract_images(self, page_indices, out_dir, min_size=50, progress_cb=None):
-        """Ekstrak gambar tertanam dari halaman menjadi file PNG.
+        """Extract embedded images from pages into PNG files.
 
-        Return daftar path file yang ditulis. min_size = ukuran minimal px.
+        Returns the list of written paths. min_size = minimum size in px.
         """
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         if not os.path.isdir(out_dir):
-            raise ValueError("Folder tujuan tidak ditemukan.")
-        base = os.path.splitext(os.path.basename(self.path))[0] if self.path else "gambar"
+            raise ValueError("Destination folder not found.")
+        base = os.path.splitext(os.path.basename(self.path))[0] if self.path else "image"
         seen, written = set(), []
         total = len(page_indices)
         done = 0
@@ -736,15 +736,15 @@ class PDFTool:
         return written
 
     def export_text(self, out_path, pages=None):
-        """Ekspor teks seluruh / sebagian halaman menjadi file .txt."""
+        """Export text of all / selected pages into a .txt file."""
         if not self.doc:
-            raise ValueError("Belum ada PDF yang dibuka.")
+            raise ValueError("No PDF is open.")
         targets = pages if pages is not None else range(self.page_count)
         chunks = []
         for i in targets:
             if not (0 <= i < self.page_count):
                 continue
-            chunks.append(f"===== Halaman {i + 1} =====\n")
+            chunks.append(f"===== Page {i + 1} =====\n")
             chunks.append(self.doc.load_page(i).get_text("text").strip())
             chunks.append("\n\n")
         with open(out_path, "w", encoding="utf-8") as f:
@@ -752,27 +752,27 @@ class PDFTool:
         return out_path
 
 
-# ---------- Fungsi mandiri (tidak butuh objek PDFTool) ----------
+# ---------- Standalone functions (no PDFTool object needed) ----------
 
 def repair_pdf(src_path, dst_path):
-    """Perbaiki PDF rusak: buka dengan mode recovery MuPDF lalu simpan bersih.
+    """Repair a broken PDF: open via MuPDF recovery mode, then save clean.
 
-    Return (ok: bool, pesan: str).
+    Returns (ok: bool, message: str).
     """
     doc = None
     try:
         try:
             doc = fitz.open(src_path)
         except Exception:
-            # Coba baca byte kasar; MuPDF bisa memulihkan struktur xref yang rusak.
+            # Fall back to reading raw bytes; MuPDF can recover broken xref structures.
             with open(src_path, "rb") as f:
                 raw = f.read()
             doc = fitz.open(stream=raw, filetype="pdf")
         n = doc.page_count
         doc.save(dst_path, garbage=4, deflate=True)
-        return True, f"Berhasil diperbaiki ({n} halaman): {dst_path}"
+        return True, f"Successfully repaired ({n} pages): {dst_path}"
     except Exception as e:
-        return False, f"Gagal memperbaiki: {e}"
+        return False, f"Repair failed: {e}"
     finally:
         if doc:
             try:

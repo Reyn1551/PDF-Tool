@@ -1,4 +1,4 @@
-"""Design tokens PDF Tool — satu sumber untuk seluruh UI."""
+"""Design tokens for PDF Tool — single source of truth for the entire UI."""
 
 BG          = "#f5f6f8"
 SURFACE     = "#ffffff"
