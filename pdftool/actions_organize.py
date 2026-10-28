@@ -6,50 +6,35 @@ from tkinter import messagebox, simpledialog
 
 import fitz
 
-from .theme import BG, TEXT, TEXT_MUTED, ACCENT, BORDER, SURFACE, DANGER, FONT, FONT_SMALL, FONT_BOLD
-from .widgets import HoverButton, SidebarItem, _safe_grab, _set_app_icon
-from .dialogs import (
-    native_open_file, native_open_files, native_save_file, native_open_dir,
-)
+from .theme import BG, TEXT, TEXT_MUTED, BORDER, SURFACE, FONT, FONT_SMALL, FONT_BOLD
+from .widgets import HoverButton, _safe_grab
+from .dialogs import (native_open_file, native_open_files, native_save_file, native_open_dir)
 from pdf_ops import PDFTool
 
 
 class OrganizeActions:
     """Mixin — combined into PDFToolApp via multiple inheritance."""
 
-    def open_pdf(self):
-        path = native_open_file("Select PDF")
-        if not path:
-            return
-        password = None
-        for attempt in range(3):  # maximum 3 password attempts
-            try:
-                self.tool.open(path, password)
-                break
-            except ValueError as e:
-                if str(e) == "NEEDS_PASSWORD":
-                    password = simpledialog.askstring(
-                        "Password",
-                        "This PDF is password protected.\nEnter password"
-                        + (f"  (attempt {attempt + 1}/3)" if attempt else "")
-                        + ":",
-                        show="*", parent=self.root,
-                    )
-                    if password is None:
-                        return  # user cancelled
-                else:
-                    messagebox.showerror("PDF Tool", str(e), parent=self.root)
-                    return
-        else:
-            messagebox.showerror("PDF Tool", "Wrong password 3 times.", parent=self.root)
-            return
-        self._refresh_preview()
+    def sidebar_entries(self):
+        return [("ORGANIZE", [
+            ("Open PDF", "open_pdf"),
+            ("Select All Pages", "select_all"),
+            ("Delete Pages", "delete_pages"),
+            ("Insert from Another PDF", "insert_pages"),
+            ("Merge PDF", "merge_pdf"),
+            ("Split PDF", "split_pdf"),
+            ("Rotate 90\u00b0", "rotate_90"),
+            ("Reorder Pages", "move_pages"),
+            ("Reverse Order", "reverse_pages"),
+            ("Crop Pages", "crop_pages_ui"),
+        ])]
 
     def select_all(self):
         if not self._require_doc():
             return
         self.tool.select_all()
-        self._refresh_preview()
+        self._refresh_selection_styles()
+        self._refresh_status()
 
     def delete_pages(self):
         if not self._require_doc():
@@ -64,7 +49,7 @@ class OrganizeActions:
         except ValueError as e:
             messagebox.showerror("PDF Tool", str(e), parent=self.root)
             return
-        self._refresh_preview()
+        self._after_document_change()
 
     def merge_pdf(self):
         if not self._require_doc():
@@ -72,12 +57,16 @@ class OrganizeActions:
         paths = native_open_files("Select PDF to merge")
         if not paths:
             return
-        try:
-            self.tool.merge(list(paths))
-        except Exception as e:
-            messagebox.showerror("PDF Tool", f"Failed to merge: {e}", parent=self.root)
+        extra = list(paths)
+
+        def mutate(tool, job):
+            job.progress(f"Merging {len(extra)} file(s)\u2026")
+            tool.merge(extra)
+
+        if self.mutate_in_job("Merging PDFs", mutate, label="Merge PDFs",
+                              name="merge") is None:
             return
-        self._refresh_preview()
+        self.status(f"Merging {len(extra)} file(s)\u2026", "wait")
 
     def insert_pages(self):
         if not self._require_doc():
@@ -113,12 +102,16 @@ class OrganizeActions:
         )
         if pos is None:
             return
-        try:
-            self.tool.insert_from(path, idx, pos - 1)
-        except ValueError as e:
-            messagebox.showerror("PDF Tool", str(e), parent=self.root)
+        src, indexes, position = path, list(idx), pos - 1
+
+        def mutate(tool, job):
+            job.progress(f"Inserting {len(indexes)} page(s)\u2026")
+            tool.insert_from(src, indexes, position)
+
+        if self.mutate_in_job("Inserting pages", mutate, label="Insert pages",
+                              name="insert") is None:
             return
-        self._refresh_preview()
+        self.status(f"Inserting {len(indexes)} page(s)\u2026", "wait")
 
     def split_pdf(self):
         if not self._require_doc():
@@ -147,11 +140,33 @@ class OrganizeActions:
                 outdir = native_open_dir("Destination folder")
                 if not outdir:
                     return
-                for i in range(self.tool.page_count):
-                    single = fitz.open()
-                    single.insert_pdf(self.tool.doc, from_page=i, to_page=i)
-                    single.save(os.path.join(outdir, f"page_{i+1}.pdf"))
-                    single.close()
+                snap = self.snapshot_bytes()
+                total = self.tool.page_count
+
+                def work(job):
+                    source = fitz.open(stream=snap, filetype="pdf")
+                    written = []
+                    try:
+                        for i in range(total):
+                            job.check()
+                            single = fitz.open()
+                            single.insert_pdf(source, from_page=i, to_page=i)
+                            target = os.path.join(outdir, f"page_{i+1}.pdf")
+                            single.save(target)
+                            single.close()
+                            written.append(target)
+                            job.progress(f"Page {i + 1}/{total}", (i + 1) / total)
+                    finally:
+                        source.close()
+                    return written
+
+                def done(written):
+                    messagebox.showinfo("PDF Tool",
+                                        f"{len(written)} files written to:\n{outdir}",
+                                        parent=self.root)
+
+                self.run_job("Splitting PDF", work, on_done=done, name="split-all")
+                return
             else:
                 if not rng:
                     raise ValueError("Enter page range first (e.g.: 3-7 or 1,3,5-8).")
@@ -172,6 +187,9 @@ class OrganizeActions:
             return
         messagebox.showinfo("PDF Tool", "Split complete.", parent=self.root)
 
+    def rotate_90(self):
+        self.rotate(90)
+
     def rotate(self, angle):
         if not self._require_doc():
             return
@@ -183,7 +201,7 @@ class OrganizeActions:
         except ValueError as e:
             messagebox.showerror("PDF Tool", str(e), parent=self.root)
             return
-        self._refresh_preview()
+        self._after_document_change()
 
     def move_pages(self):
         if not self._require_doc():
@@ -204,20 +222,8 @@ class OrganizeActions:
         except ValueError as e:
             messagebox.showerror("PDF Tool", str(e), parent=self.root)
             return
-        self._refresh_preview()
+        self._after_document_change()
 
-    def save_as(self):
-        if not self._require_doc():
-            return
-        path = native_save_file("Save PDF")
-        if not path:
-            return
-        try:
-            self.tool.save_as(path)
-        except Exception as e:
-            messagebox.showerror("PDF Tool", f"Failed to save: {e}", parent=self.root)
-            return
-        messagebox.showinfo("PDF Tool", f"Saved: {path}", parent=self.root)
 
     def reverse_pages(self):
         if not self._require_doc():
@@ -227,7 +233,7 @@ class OrganizeActions:
         except Exception as e:
             messagebox.showerror("PDF Tool", f"Failed to reverse order: {e}", parent=self.root)
             return
-        self._refresh_preview()
+        self._after_document_change()
 
     # ---------- New feature: Crop ----------
     def crop_pages_ui(self):
@@ -270,7 +276,7 @@ class OrganizeActions:
             except ValueError as e:
                 messagebox.showerror("Crop", str(e), parent=self.root)
                 return
-            self._refresh_preview()
+            self._after_document_change()
 
         HoverButton(btn_row, "Crop", command=do_crop, primary=True, small=True).pack(side=tk.LEFT, padx=6)
 

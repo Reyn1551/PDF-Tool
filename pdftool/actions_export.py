@@ -4,15 +4,23 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-import fitz
-
-from .theme import BG, TEXT, TEXT_MUTED, ACCENT, BORDER, SURFACE, FONT, FONT_SMALL, FONT_BOLD
+from .theme import BG, TEXT, TEXT_MUTED, BORDER, SURFACE, FONT, FONT_SMALL, FONT_BOLD
 from .widgets import HoverButton, _safe_grab
 from .dialogs import native_save_file, native_save_file_any, native_open_dir
+from .jobs import progress_bridge, text_bridge
 
 
 class ExportActions:
     """Mixin - combined into PDFToolApp via multiple inheritance."""
+
+    def sidebar_entries(self):
+        return [("EXPORT & OPTIMIZE", [
+            ("Compress", "compress_pdf"),
+            ("Page Numbers", "page_numbers"),
+            ("Extract Images", "extract_images_ui"),
+            ("Export Text", "export_text_ui"),
+        ])]
+
 
     def export_to_image(self):
         if not self._require_doc():
@@ -86,54 +94,132 @@ class ExportActions:
             return None
         pages = list(self.tool.selection) if self.tool.selection else list(range(self.tool.page_count))
         fmt = fmt_var.get()
+        dlg.destroy()
 
-        try:
-            dlg.config(cursor="watch")
-        except Exception:
-            pass
-        self.root.config(cursor="watch")
-        try:
-            written = self.tool.export_images(
-                pages, outdir, fmt=fmt, dpi=dpi, quality=quality
-            )
-        except Exception as e:
-            messagebox.showerror("Export to Image", f"Export failed: {e}", parent=self.root)
-            return None
-        finally:
+        def work(job):
+            tool = self.detached_tool()
             try:
-                if dlg.winfo_exists():
-                    dlg.config(cursor="")
-                    dlg.destroy()
-            except Exception:
-                pass
-            try:
-                self.root.config(cursor="")
-            except Exception:
-                pass
+                return tool.export_images(pages, outdir, fmt=fmt, dpi=dpi,
+                                          quality=quality,
+                                          progress_cb=progress_bridge(job, "Exporting"))
+            finally:
+                tool.close()
 
-        messagebox.showinfo("Export to Image", f"{len(written)} images saved to:\n{outdir}", parent=self.root)
-        return written
+        def done(written):
+            messagebox.showinfo("Export to Image",
+                                f"{len(written)} images saved to:\n{outdir}",
+                                parent=self.root)
+
+        self.run_job("Exporting images", work, on_done=done, name="export-images")
+        return None
 
     def compress_pdf(self):
         if not self._require_doc():
             return
-        path = native_save_file("Save compressed PDF", initial="compressed.pdf")
-        if not path:
-            return
+
         try:
-            before = os.path.getsize(self.tool.path)
-            self.tool.compress(path)
-            after = os.path.getsize(path)
-        except Exception as e:
-            messagebox.showerror("PDF Tool", f"Compression failed: {e}", parent=self.root)
-            return
-        pct = (1 - after / before) * 100 if before else 0
-        messagebox.showinfo(
-            "PDF Tool",
-            f"Compression done.\n{before / 1024:.1f} KB \u2192 {after / 1024:.1f} KB "
-            f"({pct:.1f}% smaller)\n\nSaved: {path}",
-            parent=self.root,
-        )
+            cur_size = os.path.getsize(self.tool.path)
+        except Exception:
+            try:
+                cur_size = len(self.tool.save_to_bytes())
+            except Exception:
+                cur_size = 0
+        cur_mb = cur_size / (1024 * 1024)
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Compress PDF")
+        dlg.transient(self.root)
+        _safe_grab(dlg)
+        dlg.configure(bg=BG)
+
+        tk.Label(
+            dlg,
+            text=f"Current size: {cur_size / 1024:.0f} KB" if cur_mb < 1 else f"Current size: {cur_mb:.1f} MB",
+            font=FONT_BOLD, bg=BG, fg=TEXT, anchor="w",
+        ).pack(fill=tk.X, padx=16, pady=(14, 4))
+
+        tk.Label(dlg, text="Quality:", font=FONT, bg=BG, fg=TEXT, anchor="w").pack(fill=tk.X, padx=16, pady=(4, 2))
+        preset = tk.StringVar(value="balanced")
+        presets = [
+            ("Light - almost no loss", "light"),
+            ("Balanced - recommended", "balanced"),
+            ("Strong - much smaller", "strong"),
+            ("Extreme - smallest, still readable", "extreme"),
+        ]
+        for text, val in presets:
+            tk.Radiobutton(dlg, text=text, variable=preset, value=val, bg=BG, fg=TEXT, font=FONT,
+                           activebackground=BG, selectcolor=SURFACE, anchor="w").pack(fill=tk.X, padx=24)
+
+        tk.Label(
+            dlg,
+            text="Target size in MB (optional):",
+            font=FONT, bg=BG, fg=TEXT, anchor="w",
+        ).pack(fill=tk.X, padx=16, pady=(10, 2))
+        target_entry = tk.Entry(dlg, width=10, font=FONT, relief=tk.FLAT,
+                                highlightthickness=1, highlightbackground=BORDER)
+        target_entry.pack(anchor="w", padx=16)
+
+        status = tk.Label(dlg, text="", font=FONT_SMALL, bg=BG, fg=TEXT_MUTED, anchor="w")
+        status.pack(fill=tk.X, padx=16, pady=(8, 0))
+
+        def do_compress():
+            raw = target_entry.get().strip().replace(",", ".")
+            target_mb = None
+            if raw:
+                try:
+                    target_mb = float(raw)
+                except ValueError:
+                    messagebox.showerror("Compress PDF", "Target size must be a number, e.g. 1.5", parent=dlg)
+                    return
+                if target_mb <= 0:
+                    messagebox.showerror("Compress PDF", "Target size must be greater than 0.", parent=dlg)
+                    return
+
+            out_path = native_save_file("Save compressed PDF", initial="compressed.pdf")
+            if not out_path:
+                return
+            before = cur_size
+            preset_name = preset.get()
+            dlg.destroy()
+
+            def work(job):
+                tool = self.detached_tool()
+                job.progress("Compressing\u2026", 0.25)
+                try:
+                    if target_mb:
+                        res = tool.compress_to_size(
+                            out_path, target_mb=target_mb, preset=preset_name,
+                            progress=text_bridge(job))
+                        return res["size_after"], res["target_reached"]
+                    tool.compress(out_path, preset=preset_name)
+                    return os.path.getsize(out_path), True
+                finally:
+                    tool.close()
+
+            def done(payload):
+                after, reached = payload
+                pct = (1 - after / before) * 100 if before else 0
+                msg = (f"Compression done.\n"
+                       f"{self._fmt_size(before)} \u2192 {self._fmt_size(after)} "
+                       f"({pct:.1f}% smaller)\n\n")
+                if not reached:
+                    msg += (f"Note: {target_mb:g} MB was not reachable without visible\n"
+                            f"quality loss, so the best safe result "
+                            f"({self._fmt_size(after)})\nwas saved instead.")
+                else:
+                    msg += f"Saved: {out_path}"
+                messagebox.showinfo("PDF Tool", msg, parent=self.root)
+
+            self.run_job("Compressing PDF", work, on_done=done, name="compress")
+
+        btn_row = tk.Frame(dlg, bg=BG)
+        btn_row.pack(pady=(12, 14))
+        HoverButton(btn_row, "Cancel", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
+        HoverButton(btn_row, "Compress", command=do_compress, small=True).pack(side=tk.LEFT, padx=6)
+
+    @staticmethod
+    def _fmt_size(n_bytes):
+        return f"{n_bytes / 1024:.0f} KB" if n_bytes < 1024 * 1024 else f"{n_bytes / (1024 * 1024):.2f} MB"
 
     # ---------- New feature: Page Numbers ----------
     def page_numbers(self):
@@ -166,13 +252,15 @@ class ExportActions:
         except ValueError:
             messagebox.showerror("PDF Tool", "Start number must be an integer.", parent=dlg)
             return
-        try:
-            self.tool.add_page_numbers(start=start, position=pos_var.get())
-        except Exception as e:
-            messagebox.showerror("PDF Tool", f"Failed: {e}", parent=dlg)
-            return
+        position = pos_var.get()
         dlg.destroy()
-        self._refresh_preview()
+
+        def mutate(tool, job):
+            job.progress("Numbering pages\u2026", 0.4)
+            tool.add_page_numbers(start=start, position=position)
+
+        self.mutate_in_job("Page numbers", mutate, label="Page numbers",
+                           name="page-numbers")
 
     def export_text_ui(self):
         if not self._require_doc():
@@ -182,12 +270,21 @@ class ExportActions:
         out = native_save_file_any("Save text (.txt)", initial=base + ".txt")
         if not out:
             return
-        try:
-            self.tool.export_text(out, pages=pages)
-        except Exception as e:
-            messagebox.showerror("PDF \u2192 Text", f"Failed: {e}", parent=self.root)
-            return
-        messagebox.showinfo("PDF \u2192 Text", f"Text saved:\n{out}", parent=self.root)
+        pages_list = pages
+
+        def work(job):
+            job.progress("Writing text\u2026", 0.5)
+            tool = self.detached_tool()
+            try:
+                tool.export_text(out, pages=pages_list)
+            finally:
+                tool.close()
+
+        self.run_job(
+            "PDF \u2192 Text", work,
+            on_done=lambda _r: messagebox.showinfo(
+                "PDF \u2192 Text", f"Text saved:\n{out}", parent=self.root),
+            name="export-text")
 
     # ---------- New feature: Extract images ----------
     def extract_images_ui(self):
@@ -198,16 +295,21 @@ class ExportActions:
         outdir = native_open_dir("Choose the destination folder for images")
         if not outdir:
             return
-        self.root.config(cursor="watch")
-        self.root.update_idletasks()
-        try:
-            written = self.tool.extract_images(pages, outdir)
-        except ValueError as e:
-            messagebox.showerror("Extract Images", str(e), parent=self.root)
-            return
-        finally:
-            self.root.config(cursor="")
-        if written:
-            messagebox.showinfo("Extract Images", f"{len(written)} images saved to:\n{outdir}", parent=self.root)
-        else:
-            messagebox.showinfo("Extract Images", "No embedded images found.", parent=self.root)
+        def work(job):
+            tool = self.detached_tool()
+            try:
+                return tool.extract_images(pages, outdir,
+                                           progress_cb=progress_bridge(job, "Extracting"))
+            finally:
+                tool.close()
+
+        def done(written):
+            if written:
+                messagebox.showinfo("Extract Images",
+                                    f"{len(written)} images saved to:\n{outdir}",
+                                    parent=self.root)
+            else:
+                messagebox.showinfo("Extract Images", "No embedded images found.",
+                                    parent=self.root)
+
+        self.run_job("Extracting images", work, on_done=done, name="extract-images")

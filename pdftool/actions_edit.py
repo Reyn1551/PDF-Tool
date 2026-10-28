@@ -13,6 +13,14 @@ from .widgets import HoverButton, _safe_grab
 class EditActions:
     """Mixin — combined into PDFToolApp via multiple inheritance."""
 
+    def sidebar_entries(self):
+        return [("EDIT & ANNOTATE", [
+            ("Edit Text", "edit_text"),
+            ("Stamp / Signature", "stamp_image_ui"),
+            ("Document Info", "metadata_ui"),
+        ])]
+
+
     def edit_text(self):
         if not self._require_doc():
             return
@@ -454,7 +462,7 @@ class EditActions:
         messagebox.showinfo("Edit Text", msg, parent=dlg)
 
         self._load_edit_page(dlg)
-        self._refresh_preview()
+        self._after_document_change()
 
     def _do_digital_replace_all(self, dlg, entry_new_text, auto_shrink, whiteout):
         if dlg.selected_span_idx is None or dlg.selected_span_idx >= len(dlg.spans):
@@ -486,7 +494,7 @@ class EditActions:
         messagebox.showinfo("Edit Text", msg, parent=dlg)
 
         self._load_edit_page(dlg)
-        self._refresh_preview()
+        self._after_document_change()
 
     def _do_digital_clear(self, dlg):
         if dlg.selected_span_idx is None or dlg.selected_span_idx >= len(dlg.spans):
@@ -502,7 +510,7 @@ class EditActions:
             return
         messagebox.showinfo("Edit Text", "Text deleted successfully.", parent=dlg)
         self._load_edit_page(dlg)
-        self._refresh_preview()
+        self._after_document_change()
 
     def _render_edit_canvas(self, dlg):
         canvas = dlg.canvas_page
@@ -594,7 +602,7 @@ class EditActions:
         dlg.selected_rect = None
         self._load_edit_page(dlg)
         self._render_edit_canvas(dlg)
-        self._refresh_preview()
+        self._after_document_change()
 
     def _do_whiteout_only(self, dlg, x_var, y_var):
         try:
@@ -620,7 +628,7 @@ class EditActions:
         dlg.selected_rect = None
         self._load_edit_page(dlg)
         self._render_edit_canvas(dlg)
-        self._refresh_preview()
+        self._after_document_change()
 
     def stamp_image_ui(self):
         if not self._require_doc():
@@ -667,7 +675,7 @@ class EditActions:
             except ValueError as e:
                 messagebox.showerror("Stamp", str(e), parent=self.root)
                 return
-            self._refresh_preview()
+            self._after_document_change()
 
         HoverButton(btn_row, "Stamp at bottom-right", command=do_stamp, primary=True, small=True).pack(side=tk.LEFT, padx=6)
 

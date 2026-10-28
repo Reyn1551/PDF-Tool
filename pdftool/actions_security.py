@@ -6,13 +6,26 @@ from tkinter import messagebox, simpledialog
 
 import fitz
 
-from .theme import BG, TEXT, TEXT_MUTED, ACCENT, BORDER, SURFACE, FONT, FONT_SMALL, FONT_BOLD
+from .theme import BG, TEXT, BORDER, FONT
 from .widgets import HoverButton, _safe_grab
 from .dialogs import native_open_file, native_save_file
+from pdf_ops import PDFTool, repair_pdf
 
 
 class SecurityActions:
     """Mixin — combined into PDFToolApp via multiple inheritance."""
+
+    def sidebar_entries(self):
+        return [("SECURITY", [
+            ("Watermark", "watermark"),
+            ("Protect with Password", "password"),
+            ("Unlock Password", "unlock_pdf"),
+            ("Repair Broken PDF", "repair_pdf_ui"),
+        ])]
+
+    def standalone_methods(self):
+        return {"repair_pdf_ui"}
+
 
     def watermark(self):
         if not self._require_doc():
@@ -47,13 +60,21 @@ class SecurityActions:
         except ValueError:
             messagebox.showerror("PDF Tool", "Opacity must be a number.", parent=self.root)
             return
-        try:
-            self.tool.add_watermark(text if text else None, img if img else None, opacity)
-        except ValueError as e:
-            messagebox.showerror("PDF Tool", str(e), parent=self.root)
+        if not text and not img:
+            messagebox.showinfo("Watermark", "Type a watermark text or pick an image.",
+                                parent=dlg)
+            return
+        if img and not os.path.isfile(img):
+            messagebox.showerror("Watermark", f"Image not found:\n{img}", parent=dlg)
             return
         dlg.destroy()
-        self._refresh_preview()
+        source_text, source_img = (text or None), (img or None)
+
+        def mutate(tool, job):
+            job.progress("Applying watermark\u2026", 0.3)
+            tool.add_watermark(source_text, source_img, opacity)
+
+        self.mutate_in_job("Watermark", mutate, label="Watermark", name="watermark")
 
     def password(self):
         if not self._require_doc():
@@ -64,17 +85,24 @@ class SecurityActions:
         path = native_save_file("Save password-protected PDF", initial="protected.pdf")
         if not path:
             return
-        try:
-            # Encrypt from the CURRENT document state (including unsaved edits),
-            # not the old file on disk as in the previous implementation.
-            data = self.tool.save_to_bytes()
+        # Encrypt from the CURRENT document state (including unsaved edits),
+        # not the old file on disk as in the previous implementation.
+        data = self.tool.save_to_bytes()
+
+        def work(job):
+            job.progress("Encrypting\u2026", 0.4)
             doc = fitz.open(stream=data, filetype="pdf")
-            doc.save(path, encryption=fitz.PDF_ENCRYPT_AES_256, owner_pw=pw, user_pw=pw)
-            doc.close()
-        except Exception as e:
-            messagebox.showerror("PDF Tool", f"Failed: {e}", parent=self.root)
-            return
-        messagebox.showinfo("PDF Tool", f"PDF saved: {path}", parent=self.root)
+            try:
+                doc.save(path, encryption=fitz.PDF_ENCRYPT_AES_256,
+                         owner_pw=pw, user_pw=pw)
+            finally:
+                doc.close()
+            return path
+
+        def done(_p):
+            messagebox.showinfo("PDF Tool", f"PDF saved: {path}", parent=self.root)
+
+        self.run_job("Protecting PDF", work, on_done=done, name="protect")
 
     def unlock_pdf(self):
         if self.tool.doc and self.tool.was_encrypted:
@@ -93,35 +121,48 @@ class SecurityActions:
         pw = simpledialog.askstring("Unlock", "Password for that PDF:", show="*", parent=self.root)
         if pw is None:
             return
-        tmp = PDFTool()
-        try:
-            tmp.open(path, pw)
-        except ValueError as e:
-            messagebox.showerror("Unlock", str(e), parent=self.root)
-            return
-        try:
-            target = os.path.splitext(path)[0] + "_unlocked.pdf"
-            data = tmp.save_to_bytes()
+        target = os.path.splitext(path)[0] + "_unlocked.pdf"
+
+        def work(job):
+            job.progress("Removing protection\u2026")
+            tmp = PDFTool()
+            try:
+                tmp.open(path, pw)
+                data = tmp.save_to_bytes()
+            finally:
+                tmp.close()
             doc = fitz.open(stream=data, filetype="pdf")
-            doc.save(target, encryption=fitz.PDF_ENCRYPT_NONE, permissions=int(-1))
-            doc.close()
-        except Exception as e:
-            messagebox.showerror("Unlock", f"Failed: {e}", parent=self.root)
-            return
-        finally:
-            tmp.close()
-        messagebox.showinfo("Unlock", f"Password-free copy saved:\n{target}", parent=self.root)
+            try:
+                doc.save(target, encryption=fitz.PDF_ENCRYPT_NONE, permissions=int(-1))
+            finally:
+                doc.close()
+            return target
+
+        def done(out):
+            messagebox.showinfo("Unlock", f"Password-free copy saved:\n{out}",
+                                parent=self.root)
+
+        self.run_job("Unlocking PDF", work, on_done=done, name="unlock")
 
     # ---------- New feature: Repair ----------
     def repair_pdf_ui(self):
         path = native_open_file("Select broken PDF")
         if not path:
             return
-        out = native_save_file("Save repair result", initial=os.path.splitext(os.path.basename(path))[0] + "_fixed.pdf")
+        out = native_save_file("Save repair result",
+                              initial=os.path.splitext(os.path.basename(path))[0] + "_fixed.pdf")
         if not out:
             return
-        ok, msg = repair_pdf(path, out)
-        if ok:
-            messagebox.showinfo("Repair", msg, parent=self.root)
-        else:
-            messagebox.showerror("Repair", msg, parent=self.root)
+
+        def work(job):
+            job.progress("Rebuilding document\u2026")
+            return repair_pdf(path, out)
+
+        def done(result):
+            ok, msg = result
+            if ok:
+                messagebox.showinfo("Repair", msg, parent=self.root)
+            else:
+                messagebox.showerror("Repair", msg, parent=self.root)
+
+        self.run_job("Repairing PDF", work, on_done=done, name="repair")

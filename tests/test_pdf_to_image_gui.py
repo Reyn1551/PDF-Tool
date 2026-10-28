@@ -91,6 +91,7 @@ def main():
         quality_entry.insert(0, "90")
 
         app._do_export_images(dlg, var_fmt, quality_entry, var_dpi)
+        app.jobs.wait()
         check("Info messagebox shown", mock_info.called)
 
     files_png = sorted(os.listdir(out_all_png))
@@ -117,6 +118,7 @@ def main():
         q_entry.insert(0, "85")
 
         app._do_export_images(dlg2, var_fmt, q_entry, var_dpi)
+        app.jobs.wait()
         check("Success messagebox called for JPEG", mock_info.called)
 
     files_jpg = sorted(os.listdir(out_sub_jpg))

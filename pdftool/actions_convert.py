@@ -4,12 +4,9 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-from .theme import BG, TEXT, BORDER, SURFACE, FONT, FONT_SMALL, FONT_BOLD
+from .theme import BG, TEXT, BORDER, SURFACE, FONT, FONT_BOLD
 from .widgets import HoverButton, _safe_grab
-from .dialogs import (
-    native_open_files_images, native_open_file_office, native_open_file,
-    native_save_file_any, native_open_dir,
-)
+from .dialogs import (native_open_files_images, native_open_file_office, native_open_file, native_save_file_any, native_open_dir)
 from pdf_convert import (
     images_to_pdf, office_to_pdf, pdf_to_docx, html_to_pdf, find_soffice,
 )
@@ -17,6 +14,23 @@ from pdf_convert import (
 
 class ConvertActions:
     """Mixin — combined into PDFToolApp via multiple inheritance."""
+
+    def sidebar_entries(self):
+        return [("CONVERT", [
+            ("PDF \u2192 Image (JPG/PNG)", "export_to_image"),
+            ("Image \u2192 PDF", "images_to_pdf_ui"),
+            ("Office \u2192 PDF", "office_to_pdf_ui"),
+            ("PDF \u2192 Word (.docx)", "pdf_to_word_ui"),
+            ("HTML \u2192 PDF", "html_to_pdf_ui"),
+        ])]
+
+    def standalone_methods(self):
+        return {"images_to_pdf_ui", "office_to_pdf_ui", "html_to_pdf_ui"}
+
+
+    def standalone_methods(self):
+        return {"images_to_pdf_ui", "office_to_pdf_ui", "html_to_pdf_ui",
+                "repair_pdf_ui"}
 
     def images_to_pdf_ui(self):
         paths = native_open_files_images("Select images (multiple)")
@@ -41,12 +55,19 @@ class ConvertActions:
         def do_convert():
             mode = mode_var.get()
             dlg.destroy()
-            try:
+
+            def work(job):
+                job.progress("Converting images\u2026")
                 images_to_pdf(paths, out, page_mode=mode)
-            except ValueError as e:
-                messagebox.showerror("Image \u2192 PDF", str(e), parent=self.root)
-                return
-            messagebox.showinfo("Image \u2192 PDF", f"Done!\n{len(paths)} images converted to PDF:\n{out}", parent=self.root)
+                return out
+
+            def done(_out):
+                messagebox.showinfo(
+                    "Image \u2192 PDF",
+                    f"Done!\n{len(paths)} images converted to PDF:\n{out}",
+                    parent=self.root)
+
+            self.run_job("Image \u2192 PDF", work, on_done=done, name="images-to-pdf")
 
         btn_row = tk.Frame(dlg, bg=BG)
         btn_row.pack(pady=(10, 12))
@@ -69,18 +90,15 @@ class ConvertActions:
         outdir = native_open_dir("Destination folder for converted PDF")
         if not outdir:
             return
-        self.root.config(cursor="watch")
-        self.status_label.config(text=f"Converting {os.path.basename(path)} \u2026", fg=ACCENT)
-        self.root.update_idletasks()
-        try:
-            result = office_to_pdf(path, outdir)
-        except ValueError as e:
-            messagebox.showerror("Office \u2192 PDF", str(e), parent=self.root)
-            return
-        finally:
-            self.root.config(cursor="")
-        self._refresh_status()
-        messagebox.showinfo("Office \u2192 PDF", f"Conversion complete:\n{result}", parent=self.root)
+        def work(job):
+            job.progress(f"Converting {os.path.basename(path)}\u2026")
+            return office_to_pdf(path, outdir)
+
+        def done(result):
+            messagebox.showinfo("Office \u2192 PDF", f"Conversion complete:\n{result}",
+                                parent=self.root)
+
+        self.run_job("Office \u2192 PDF", work, on_done=done, name="office-to-pdf")
 
     # ---------- New feature: PDF -> Word ----------
     def pdf_to_word_ui(self):
@@ -93,25 +111,18 @@ class ConvertActions:
         out = native_save_file_any("Save Word document", initial=initial)
         if not out:
             return
-        self.root.config(cursor="watch")
-        self.status_label.config(text="Converting to Word \u2026", fg=ACCENT)
-        self.root.update_idletasks()
-        try:
-            n = pdf_to_docx(src, out)
-        except ValueError as e:
-            messagebox.showerror("PDF \u2192 Word", str(e), parent=self.root)
-            return
-        except Exception as e:
-            messagebox.showerror("PDF \u2192 Word", f"Failed: {e}", parent=self.root)
-            return
-        finally:
-            self.root.config(cursor="")
-        self._refresh_status()
-        messagebox.showinfo(
-            "PDF \u2192 Word",
-            f"Done ({n} pages).\nNote: best-effort result as text per paragraph,\ncomplex layouts may differ.\n\nSaved: {out}",
-            parent=self.root,
-        )
+        def work(job):
+            job.progress("Converting to Word\u2026")
+            return pdf_to_docx(src, out)
+
+        def done(n):
+            messagebox.showinfo(
+                "PDF \u2192 Word",
+                f"Done ({n} pages).\nNote: best-effort result as text per paragraph,\n"
+                f"complex layouts may differ.\n\nSaved: {out}",
+                parent=self.root)
+
+        self.run_job("PDF \u2192 Word", work, on_done=done, name="pdf-to-word")
 
     # ---------- New feature: HTML -> PDF ----------
     def html_to_pdf_ui(self):
@@ -138,12 +149,16 @@ class ConvertActions:
             if not out:
                 return
             dlg.destroy()
-            try:
+
+            def work(job):
+                job.progress("Rendering HTML\u2026")
                 html_to_pdf(html, out)
-            except ValueError as e:
-                messagebox.showerror("HTML \u2192 PDF", str(e), parent=self.root)
-                return
-            messagebox.showinfo("HTML \u2192 PDF", f"Done:\n{out}", parent=self.root)
+                return out
+
+            def done(_out):
+                messagebox.showinfo("HTML \u2192 PDF", f"Done:\n{out}", parent=self.root)
+
+            self.run_job("HTML \u2192 PDF", work, on_done=done, name="html-to-pdf")
 
         HoverButton(btn_row, "Cancel", command=dlg.destroy, small=True).pack(side=tk.LEFT, padx=6)
         HoverButton(btn_row, "Create PDF", command=do_convert, primary=True, small=True).pack(side=tk.LEFT, padx=6)

@@ -3,7 +3,6 @@
 All functions return a path (str) or list of paths; empty string = user cancelled.
 None from _zenity means zenity is not installed -> falls back to tkinter.
 """
-import os
 import subprocess
 
 import tkinter as tk
