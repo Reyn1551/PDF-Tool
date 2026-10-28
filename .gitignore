@@ -12,3 +12,9 @@ __pycache__/
 .orc/
 .superpowers/
 docs/superpowers/
+
+# test artifacts
+big.*
+proposal.pdf
+protected*.pdf
+*.pdf.bak
