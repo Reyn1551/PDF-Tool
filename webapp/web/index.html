@@ -121,7 +121,7 @@
   <div id="dropzone" class="dropzone hidden">
     <div class="dropzone-inner">
       <svg class="icon dz-icon"><use href="#i-download"/></svg>
-      <span>Drop PDF to open</span>
+      <span>Drop it here — I'll take it from there</span>
     </div>
   </div>
 
@@ -136,16 +136,23 @@
           <path d="M19 24h8M19 28h8M19 32h5" stroke="#9db9ea" stroke-width="2" stroke-linecap="round"/>
         </svg>
       </div>
-      <h1>PDF Tool</h1>
-      <p>A fast, private workspace for your PDFs. Files are processed on the server you run — nothing is sent to a third party.</p>
+      <h1>Let's tidy up that PDF</h1>
+      <p>Merge, split, compress, sign or lock a document — right here, without installing anything. Your file stays on this server and never touches a third party.</p>
       <label class="btn primary big" for="file">
         <svg class="icon"><use href="#i-doc"/></svg>
-        Open PDF
+        Choose a PDF
       </label>
       <input type="file" id="file" accept="application/pdf" hidden>
       <div class="empty-hint">
         <svg class="icon"><use href="#i-layers"/></svg>
-        or drag &amp; drop a file anywhere
+        or drop a file anywhere on this page
+      </div>
+      <div class="empty-chips">
+        <span class="chip"><svg class="icon"><use href="#i-split"/></svg>Split</span>
+        <span class="chip"><svg class="icon"><use href="#i-move"/></svg>Reorder</span>
+        <span class="chip"><svg class="icon"><use href="#i-compress"/></svg>Compress</span>
+        <span class="chip"><svg class="icon"><use href="#i-lock"/></svg>Protect</span>
+        <span class="chip"><svg class="icon"><use href="#i-watermark"/></svg>Watermark</span>
       </div>
     </div>
   </div>
@@ -163,7 +170,7 @@
           </svg>
           PDF Tool
         </span>
-        <button id="newBtn" class="icon-btn" title="Open another PDF" aria-label="Open another PDF">
+        <button id="newBtn" class="icon-btn" title="Open a different PDF" aria-label="Open a different PDF">
           <svg class="icon"><use href="#i-plus"/></svg>
         </button>
       </div>
@@ -201,7 +208,7 @@
             <button id="zoomIn" class="icon-btn ghost" title="Zoom in (+)" aria-label="Zoom in">
               <svg class="icon"><use href="#i-zoom-in"/></svg>
             </button>
-            <button id="zoomFit" class="icon-btn ghost" title="Fit width" aria-label="Fit width">
+            <button id="zoomFit" class="icon-btn ghost" title="Reset zoom to 100%" aria-label="Reset zoom">
               <svg class="icon"><use href="#i-fit"/></svg>
             </button>
           </div>
@@ -214,6 +221,7 @@
             <span id="selInfo" class="sel-info">Pages</span>
             <button id="clearSel" class="link-btn hidden">Clear</button>
           </div>
+          <div class="thumbs-hint" id="thumbsHint">Right-click a page to pick it</div>
           <div id="thumbs" class="thumbs"></div>
         </div>
         <div class="viewer-wrap">

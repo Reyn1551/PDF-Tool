@@ -50,6 +50,10 @@ function toast(msg, kind = "ok") {
 }
 function busy(on) { document.body.classList.toggle("busy", on); }
 
+/** "1 page" / "3 pages" — small grammar helper so messages read naturally. */
+function plural(n, word) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
+function kb(bytes) { return bytes ? Math.max(1, Math.round(bytes / 1024)) + " KB" : ""; }
+
 // ============================================================ modal
 function modal({ title, sub, fields, okText = "Apply", onOk, danger = false, iconName = "doc" }) {
   const card = $("#modalCard");
@@ -125,9 +129,9 @@ async function openFile(file) {
     fd.append("file", file);
     const s = await api("/api/upload", { method: "POST", body: fd });
     adoptSession(s);
-    toast(`Opened ${s.name} · ${s.pages} pages`);
+    toast(`${s.name} is ready — ${plural(s.pages, "page")}`);
   } catch (e) {
-    toast("Failed to open: " + e.message, "err");
+    toast("Couldn't open that file. " + e.message, "err");
   } finally { busy(false); }
 }
 
@@ -249,14 +253,17 @@ function updatePageInfo() {
   const sel = state.selection.size;
   $("#pageInfo").textContent = `Page ${state.page + 1} of ${state.pages}`;
   const selInfo = $("#selInfo");
+  const hint = $("#thumbsHint");
   if (sel) {
-    selInfo.textContent = `${sel} selected`;
+    selInfo.textContent = `${plural(sel, "page")} picked`;
     selInfo.classList.add("sel-active");
     $("#clearSel").classList.remove("hidden");
+    if (hint) hint.classList.add("hidden");
   } else {
     selInfo.textContent = "Pages";
     selInfo.classList.remove("sel-active");
     $("#clearSel").classList.add("hidden");
+    if (hint) hint.classList.remove("hidden");
   }
   $("#prevBtn").disabled = state.page <= 0;
   $("#nextBtn").disabled = state.page >= state.pages - 1;
@@ -320,7 +327,7 @@ function renderTools() {
 
 function requireSel() {
   if (state.selection.size === 0) {
-    toast("Select pages first — right-click a thumbnail", "err");
+    toast("Pick a page first — right-click any thumbnail.", "err");
     throw new Error("no selection");
   }
   return [...state.selection].sort((a, b) => a - b);
@@ -332,11 +339,11 @@ async function deletePages() {
   modal({
     title: "Delete pages",
     sub: `Remove ${pages.length} page(s): ${pages.map(p => p + 1).join(", ")}. This cannot be undone.`,
-    iconName: "trash", danger: true, okText: "Delete",
+    iconName: "trash", danger: true, okText: "Delete pages",
     fields: [],
     onOk: async () => {
       const s = await postJSON(`/api/session/${state.id}/delete`, { pages });
-      applyEdit(s);
+      applyEdit(s, `Removed ${plural(pages.length, "page")}`);
     },
   });
 }
@@ -351,7 +358,7 @@ async function rotateModal() {
       options: [{ value: "90", label: "90°" }, { value: "180", label: "180°" }, { value: "270", label: "270°" }] }],
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/rotate`, { pages, deg: +v.deg });
-      applyEdit(s);
+      applyEdit(s, `Turned ${plural(pages.length, "page")} by ${v.deg}°`);
     },
   });
 }
@@ -360,9 +367,12 @@ async function reverse() {
   modal({
     title: "Reverse page order",
     sub: "Flip the whole document end-to-end.",
-    iconName: "reverse", okText: "Reverse",
+    iconName: "reverse", okText: "Flip order",
     fields: [],
-    onOk: async () => { const s = await postJSON(`/api/session/${state.id}/reverse`, {}); applyEdit(s); },
+    onOk: async () => {
+      const s = await postJSON(`/api/session/${state.id}/reverse`, {});
+      applyEdit(s, "Page order flipped");
+    },
   });
 }
 
@@ -370,7 +380,7 @@ async function splitModal() {
   modal({
     title: "Split — extract a range",
     sub: "Creates a new document from the pages you choose (1-based, inclusive).",
-    iconName: "split", okText: "Extract",
+    iconName: "split", okText: "Extract pages",
     fields: [
       { row: true, row: [
         { key: "start", label: "From page", type: "number", value: 1, min: 1 },
@@ -390,7 +400,7 @@ async function reorderSelected() {
   modal({
     title: "Move selected pages",
     sub: `Move ${pages.length} page(s) to a new position.`,
-    iconName: "move", okText: "Move",
+    iconName: "move", okText: "Move pages",
     fields: [{ key: "pos", label: "Insert before page", type: "number", value: 1, min: 1, max: state.pages + 1 }],
     onOk: async (v) => {
       const pos = Math.max(0, Math.min(state.pages, +v.pos - 1));
@@ -399,7 +409,7 @@ async function reorderSelected() {
       for (let i = 0; i < state.pages; i++) if (!set.has(i)) rest.push(i);
       const order = rest.slice(0, pos).concat(pages).concat(rest.slice(pos));
       const s = await postJSON(`/api/session/${state.id}/reorder`, { order });
-      applyEdit(s);
+      applyEdit(s, `Moved ${plural(pages.length, "page")} to position ${pos + 1}`);
     },
   });
 }
@@ -409,7 +419,7 @@ async function protectModal() {
   modal({
     title: "Protect with password",
     sub: "Encrypt the document. You will need this password to open it again.",
-    iconName: "lock", okText: "Protect",
+    iconName: "lock", okText: "Set password",
     fields: [
       { key: "user", label: "Open password", type: "password", placeholder: "required" },
       { key: "owner", label: "Owner password (optional)", type: "password", placeholder: "restricts editing & printing" },
@@ -417,7 +427,7 @@ async function protectModal() {
     onOk: async (v) => {
       if (!v.user) throw new Error("open password required");
       const s = await postJSON(`/api/session/${state.id}/protect`, { user: v.user, owner: v.owner });
-      applyEdit(s);
+      applyEdit(s, "Locked — a password is now needed to open it");
     },
   });
 }
@@ -426,11 +436,11 @@ async function unlockModal() {
   modal({
     title: "Unlock",
     sub: "Remove the password from this document.",
-    iconName: "lock-open", okText: "Unlock",
+    iconName: "lock-open", okText: "Remove password",
     fields: [{ key: "password", label: "Password", type: "password" }],
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/unlock`, { password: v.password });
-      applyEdit(s);
+      applyEdit(s, "Unlocked — no password needed anymore");
     },
   });
 }
@@ -451,7 +461,7 @@ async function watermarkModal() {
       const s = await postJSON(`/api/session/${state.id}/watermark`, {
         text: v.text, wRatio: +v.wRatio / 100, hRatio: +v.hRatio / 100, pos: v.pos,
       });
-      applyEdit(s);
+      applyEdit(s, "Watermark added to every page");
     },
   });
 }
@@ -461,7 +471,7 @@ async function redactModal() {
   modal({
     title: "Redact (white-out)",
     sub: `Draw a box on page ${page + 1}. Coordinates are fractions of the page (0–1, origin top-left).`,
-    iconName: "redact", danger: true, okText: "Redact",
+    iconName: "redact", danger: true, okText: "Hide area",
     fields: [
       { row: true, row: [
         { key: "x", label: "X (left)", type: "number", value: 0.1, step: 0.05 },
@@ -476,7 +486,7 @@ async function redactModal() {
       const s = await postJSON(`/api/session/${state.id}/redact`, {
         rects: [{ page, x: +v.x, y: +v.y, w: +v.w, h: +v.h }],
       });
-      applyEdit(s);
+      applyEdit(s, `Area on page ${page + 1} is now hidden`);
     },
   });
 }
@@ -486,12 +496,16 @@ async function compressModal() {
   modal({
     title: "Compress",
     sub: "Re-encode with Ghostscript. Lower quality means a smaller file.",
-    iconName: "compress", okText: "Compress",
+    iconName: "compress", okText: "Shrink file",
     fields: [{ key: "level", label: "Quality", type: "select", value: "1",
       options: [{ value: "0", label: "Smallest (72 dpi)" }, { value: "1", label: "Balanced (150 dpi)" }, { value: "2", label: "High (300 dpi)" }] }],
     onOk: async (v) => {
+      const before = state.size;
       const s = await postJSON(`/api/session/${state.id}/compress`, { level: +v.level });
-      applyEdit(s);
+      const saved = before && s.size < before
+        ? ` — ${kb(before)} down to ${kb(s.size)}`
+        : "";
+      applyEdit(s, "Compressed" + saved);
     },
   });
 }
@@ -501,14 +515,14 @@ async function exportText() {
   const res = await fetch(`/api/session/${state.id}/export/text`);
   const text = await res.text();
   downloadBlob(new Blob([text], { type: "text/plain" }), state.name.replace(/\.pdf$/i, "") + ".txt");
-  toast("Text exported");
+  toast("Text file is ready to save");
 }
 
 async function exportImagesModal() {
   modal({
     title: "Export images",
     sub: "Render every page to an image.",
-    iconName: "image", okText: "Export",
+    iconName: "image", okText: "Save images",
     fields: [
       { key: "fmt", label: "Format", type: "select", value: "png", options: [{ value: "png", label: "PNG" }, { value: "jpg", label: "JPG" }] },
       { key: "w", label: "Width (px)", type: "number", value: 1100, min: 100 },
@@ -521,7 +535,7 @@ async function exportImagesModal() {
         a.href = dataUrl; a.download = name;
         document.body.appendChild(a); a.click(); a.remove();
       }
-      toast(`Exported ${Object.keys(data).length} images`);
+      toast(`${plural(Object.keys(data).length, "image")} saved`);
     },
   });
 }
@@ -535,7 +549,7 @@ function downloadBlob(blob, name) {
 }
 
 // ============================================================ apply edit
-function applyEdit(s) {
+function applyEdit(s, message) {
   state.pages = s.pages; state.version = s.version; state.size = s.size;
   state.name = s.name;
   if (state.page >= state.pages) state.page = state.pages - 1;
@@ -544,7 +558,7 @@ function applyEdit(s) {
   renderThumbs();
   renderViewer();
   updatePageInfo();
-  toast("Done");
+  toast(message || "All set.");
 }
 
 // ============================================================ download
@@ -554,7 +568,7 @@ async function download() {
     const res = await fetch(`/api/session/${state.id}/download`);
     const blob = await res.blob();
     downloadBlob(blob, state.name.replace(/\.pdf$/i, "") + "-edited.pdf");
-    toast("Download started");
+    toast("Saved to your downloads");
   } catch (e) { toast("Download failed: " + e.message, "err"); }
   finally { busy(false); }
 }
