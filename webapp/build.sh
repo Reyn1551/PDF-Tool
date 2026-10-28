@@ -68,8 +68,17 @@ export PKG_CONFIG_PATH="$PDFIUM_DIR/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PAT
 # ---- build -------------------------------------------------------------
 echo "==> building"
 mkdir -p bin
+# RELOCATABLE=1 produces a tarball-friendly layout: bin/pdftoolweb + lib/libpdfium.so,
+# with an $ORIGIN/../lib rpath so it runs from any directory.
+if [ "${RELOCATABLE:-0}" = "1" ]; then
+  rpath='$ORIGIN/../lib'
+  mkdir -p lib
+  cp "$PDFIUM_DIR/lib/libpdfium.so" lib/
+else
+  rpath="$PDFIUM_DIR/lib"
+fi
 "$GO" build -tags pdfium_experimental \
-  -ldflags "-s -w -r $PDFIUM_DIR/lib" \
+  -ldflags "-s -w -r $rpath" \
   -o bin/pdftoolweb .
 
 echo "==> done: $(pwd)/bin/pdftoolweb"

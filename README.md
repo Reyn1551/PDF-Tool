@@ -4,6 +4,12 @@ A desktop PDF application (Tkinter + PyMuPDF) with a full iLovePDF-style feature
 set — merge, split, compress, convert, edit text, protect, and more. Runs natively
 on Linux.
 
+> **Two versions in this repo**
+> - **Desktop** — the Tkinter app below. Run with `./run.sh`.
+> - **Web** — a Go + PDFium single binary for a 1 GB VPS, in [`webapp/`](webapp/README.md).
+>   Install in one command:
+>   `curl -fsSL <raw-install.sh-url> | sudo bash` (see [`webapp/README.md`](webapp/README.md)).
+
 ## 🚀 How to Run (no `python3 blah blah` needed)
 
 ### Option 1 - Double-click / single command

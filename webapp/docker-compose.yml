@@ -1,0 +1,37 @@
+# PDF Tool web — Docker Compose
+#
+# Easiest self-host path: no Go/PDFium/Ghostscript on the host, one command.
+#
+#   docker compose up -d
+#   open http://localhost:8080
+#
+# Uses the prebuilt image. To build locally instead, comment `image:` and
+# uncomment `build:`.
+
+services:
+  pdftoolweb:
+    image: ghcr.io/OWNER/REPO:latest
+    # build: .
+    container_name: pdftoolweb
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      ADDR: ":8080"
+      GOMAXPROCS: "1"          # 1 vCPU: don't oversubscribe the scheduler
+    # --- 1 GB VPS tuning -------------------------------------------------
+    mem_limit: 768m            # keep headroom for the OS on a 1 GB box
+    mem_reservation: 256m
+    cpus: "1.0"
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp                    # Ghostscript writes temp PDFs here
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

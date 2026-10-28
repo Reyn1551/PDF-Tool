@@ -1,0 +1,130 @@
+# Builds release artifacts on tag push (v*):
+#   - pdftoolweb-linux-amd64.tar.gz  (binary + libpdfium.so, $ORIGIN rpath)
+#   - pdftoolweb-linux-arm64.tar.gz
+#   - multi-arch Docker image on GHCR
+#
+# Users then install with:
+#   curl -fsSL .../webapp/deploy/install.sh | sudo bash
+#   docker run -d -p 8080:8080 ghcr.io/OWNER/REPO:latest
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  PDFIUM_TAG: chromium/8125
+  GO_VERSION: "1.27"
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - triple: amd64
+            asset: pdfium-linux-x64.tgz
+            cc: gcc
+          - triple: arm64
+            asset: pdfium-linux-arm64.tgz
+            cc: aarch64-linux-gnu-gcc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install cross compiler (arm64)
+        if: matrix.triple == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Fetch PDFium + pkg-config
+        run: |
+          sudo mkdir -p /opt/pdfium
+          sudo curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/${PDFIUM_TAG}/${{ matrix.asset }}" -o /tmp/pdfium.tgz
+          sudo tar -xzf /tmp/pdfium.tgz -C /opt/pdfium
+          sudo mkdir -p /opt/pdfium/pkgconfig
+          sudo tee /opt/pdfium/pkgconfig/pdfium.pc >/dev/null <<'PC'
+          prefix=/opt/pdfium
+          libdir=${prefix}/lib
+          includedir=${prefix}/include
+
+          Name: PDFium
+          Description: PDFium
+          Version: 8125
+          Requires:
+          Libs: -L${libdir} -lpdfium
+          Cflags: -I${includedir}
+          PC
+
+      - name: Build
+        working-directory: webapp
+        env:
+          PKG_CONFIG_PATH: /opt/pdfium/pkgconfig
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: ${{ matrix.triple }}
+          CC: ${{ matrix.cc }}
+        run: |
+          go build -tags pdfium_experimental \
+            -ldflags "-s -w -r '\$ORIGIN/../lib'" \
+            -o pdftoolweb .
+
+      - name: Package
+        run: |
+          d="pdftoolweb-linux-${{ matrix.triple }}"
+          mkdir -p "$d/bin" "$d/lib" "$d/deploy"
+          cp webapp/pdftoolweb "$d/bin/"
+          cp /opt/pdfium/lib/libpdfium.so "$d/lib/"
+          cp webapp/deploy/install.sh "$d/deploy/"
+          cp webapp/deploy/pdftoolweb.service "$d/deploy/" 2>/dev/null || true
+          cp webapp/README.md "$d/"
+          tar -czf "$d.tar.gz" "$d"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: pdftoolweb-linux-*.tar.gz
+          fail_on_unmatched_files: true
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./webapp
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

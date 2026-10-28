@@ -77,43 +77,80 @@ client can invalidate stale thumbnails.
 | GET | `/api/session/{id}/export/text` | full text |
 | GET | `/api/session/{id}/export/images?w=&fmt=` | per-page images (data URLs) |
 
-## Deploying to a 1 GB VPS
+## Installing it (pick one)
 
-### Option A — systemd + nginx (recommended)
+Installation is layered so every user has a path with **zero build steps**.
+
+| You are… | Use | Effort |
+|---|---|---|
+| Just want to use a PDF tool | a hosted instance (no install) | none |
+| Self-hosting on a VPS, not technical | **one-line installer** | 1 command |
+| Self-hosting, prefer containers | **Docker Compose** | 1 command |
+| Developer / want to hack on it | build from source | 2 commands |
+| Desktop user | the Tkinter app + AppImage | double-click |
+
+### 1. One-line installer (easiest for a VPS)
+
+On a fresh Debian/Ubuntu server:
 
 ```bash
-# 1. build on the VPS (or cross-build and copy the binary)
-sudo apt install -y golang gcc pkg-config ghostscript
-./build.sh
+curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/web/webapp/deploy/install.sh | sudo bash
+```
 
-# 2. install
-sudo mkdir -p /opt/pdftool
-sudo cp -r bin web /opt/pdftool/          # web/ is only needed for dev; binary embeds it
-sudo useradd -r -s /usr/sbin/nologin pdftool
-sudo chown -R pdftool:pdftool /opt/pdftool
+It installs Ghostscript, downloads the prebuilt binary + `libpdfium.so`, creates
+a `pdftool` user, installs a `systemd` unit (768 MB cap), starts it, and prints
+the URL. Upgrade by re-running it; remove with:
 
-# 3. service
-sudo cp deploy/pdftoolweb.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now pdftoolweb
+```bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/web/webapp/deploy/install.sh | sudo bash -s -- --uninstall
+```
 
-# 4. reverse proxy + TLS
+### 2. Docker Compose (no dependencies on the host)
+
+```bash
+cd webapp
+docker compose up -d          # uses the prebuilt GHCR image
+# open http://localhost:8080
+```
+
+Or build the image yourself: `docker build -t pdftoolweb . && docker run -d -p 8080:8080 --memory=768m pdftoolweb`.
+
+The image is multi-arch (`linux/amd64`, `linux/arm64`) and already contains
+Ghostscript + PDFium.
+
+### 3. Build from source
+
+```bash
+sudo apt install -y golang gcc pkg-config ghostscript   # build + runtime deps
+./build.sh          # downloads PDFium automatically, builds bin/pdftoolweb
+./bin/pdftoolweb -addr :8080
+```
+
+`build.sh` produces a **relocatable** layout when `RELOCATABLE=1` is set
+(`bin/pdftoolweb` + `lib/libpdfium.so` with an `$ORIGIN/../lib` rpath) — that is
+exactly what the release tarballs ship, so it runs from any directory with no
+`LD_LIBRARY_PATH`.
+
+### 4. Reverse proxy + TLS
+
+Put nginx in front for HTTPS and a 160 MB upload limit:
+
+```bash
 sudo cp deploy/pdftoolweb.nginx /etc/nginx/sites-available/pdftoolweb
 sudo ln -s /etc/nginx/sites-available/pdftoolweb /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-The service unit caps the process at **768 MB** (`MemoryMax`) and pins it to
-**100% of one CPU** (`CPUQuota=100%`), so a pathological file can't take the box
-down.
+### Release pipeline
 
-### Option B — Docker
+`.github/workflows/release.yml` builds, on a `v*` tag:
 
-```bash
-docker build -t pdftoolweb .
-docker run -d -p 8080:8080 --name pdftoolweb \
-  --memory=768m --memory-swap=768m pdftoolweb
-```
+- `pdftoolweb-linux-amd64.tar.gz` and `pdftoolweb-linux-arm64.tar.gz`
+  (binary + `libpdfium.so` + `deploy/`), published as GitHub Release assets;
+- a multi-arch image at `ghcr.io/OWNER/REPO`.
+
+So users never need Go, a compiler, PDFium, or Ghostscript installed to get a
+working binary — they download one tarball or pull one image.
 
 ## Why this fits 1 GB
 
