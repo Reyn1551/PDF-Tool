@@ -141,6 +141,7 @@ function adoptSession(s) {
   state.selection.clear();
   $("#empty").classList.add("hidden");
   $("#app").classList.remove("hidden");
+  document.body.classList.add("has-doc");
   renderMeta();
   renderThumbs();
   renderViewer();
@@ -285,26 +286,34 @@ function zoomBy(d) {
 // ============================================================ tools
 const TOOLS = [
   { group: "Organize", items: [
-    { icon: "trash",    label: "Delete pages",           act: deletePages },
-    { icon: "rotate",   label: "Rotate",                 act: rotateModal },
-    { icon: "reverse",  label: "Reverse order",          act: reverse },
-    { icon: "split",    label: "Split (extract range)",  act: splitModal },
-    { icon: "move",     label: "Reorder selected pages", act: reorderSelected },
+    { icon: "trash",    label: "Delete pages",  desc: "Remove the pages you don't need",        act: deletePages,     needsSel: true },
+    { icon: "rotate",   label: "Rotate",        desc: "Turn pages 90°, 180° or 270°",           act: rotateModal,     needsSel: true },
+    { icon: "reverse",  label: "Reverse order", desc: "Flip the whole document end-to-end",     act: reverse },
+    { icon: "split",    label: "Split",         desc: "Save a range of pages as a new file",    act: splitModal },
+    { icon: "move",     label: "Move pages",    desc: "Put picked pages in a new position",     act: reorderSelected, needsSel: true },
   ]},
   { group: "Security", items: [
-    { icon: "lock",      label: "Protect (password)", act: protectModal },
-    { icon: "lock-open", label: "Unlock",             act: unlockModal },
-    { icon: "watermark", label: "Watermark",          act: watermarkModal },
-    { icon: "redact",    label: "Redact",             act: redactModal },
+    { icon: "lock",      label: "Add password",    desc: "Ask for a password before opening",   act: protectModal },
+    { icon: "lock-open", label: "Remove password", desc: "Unlock a protected file",             act: unlockModal },
+    { icon: "watermark", label: "Watermark",       desc: "Stamp text across every page",        act: watermarkModal },
+    { icon: "redact",    label: "Hide an area",    desc: "Cover up something permanently",      act: redactModal },
   ]},
   { group: "Optimize", items: [
-    { icon: "compress", label: "Compress", act: compressModal },
+    { icon: "compress", label: "Compress", desc: "Make the file smaller", act: compressModal },
   ]},
   { group: "Export", items: [
-    { icon: "text",  label: "Extract text",   act: exportText },
-    { icon: "image", label: "Export images",  act: exportImagesModal },
+    { icon: "text",  label: "Extract text",  desc: "Save all the text as a .txt file",  act: exportText },
+    { icon: "image", label: "Save as images", desc: "Turn each page into a PNG or JPG",  act: exportImagesModal },
   ]},
 ];
+
+/** Run a tool, closing any open sheet first. */
+function runTool(it) {
+  closeSheet();
+  if (!state.id) return;
+  busy(true);
+  Promise.resolve(it.act()).catch(() => {}).finally(() => busy(false));
+}
 
 function renderTools() {
   const nav = $("#tools");
@@ -315,10 +324,10 @@ function renderTools() {
     grp.appendChild(t);
     for (const it of g.items) {
       const b = document.createElement("button"); b.className = "tool-item";
-      b.title = it.label;                 // tooltip for the mobile icon rail
-      b.setAttribute("aria-label", it.label);
+      b.title = `${it.label} — ${it.desc}`;
+      b.setAttribute("aria-label", `${it.label}. ${it.desc}`);
       b.innerHTML = `<span class="ti-tile">${icon(it.icon)}</span><span class="ti-label">${it.label}</span>`;
-      b.onclick = () => { if (!state.id) return; busy(true); Promise.resolve(it.act()).finally(() => busy(false)); };
+      b.onclick = () => runTool(it);
       grp.appendChild(b);
     }
     nav.appendChild(grp);
@@ -327,7 +336,10 @@ function renderTools() {
 
 function requireSel() {
   if (state.selection.size === 0) {
-    toast("Pick a page first — right-click any thumbnail.", "err");
+    const mobile = window.matchMedia("(max-width: 720px)").matches;
+    toast(mobile
+      ? "Pick pages first — tap Pages at the bottom, then Select."
+      : "Pick a page first — right-click any thumbnail.", "err");
     throw new Error("no selection");
   }
   return [...state.selection].sort((a, b) => a - b);
@@ -589,6 +601,10 @@ function setupDnD() {
 // ============================================================ keyboard
 function setupKeys() {
   window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("#sheet").classList.contains("hidden")) {
+      closeSheet();
+      return;
+    }
     if (!$("#modal").classList.contains("hidden")) {
       if (e.key === "Escape") $("#modal").classList.add("hidden");
       return;
@@ -611,6 +627,145 @@ function scrollThumbTo(i) {
   strip.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
 }
 
+// ============================================================ bottom sheet (mobile)
+let sheetReturnFocus = null;
+
+function openSheet(title, build) {
+  sheetReturnFocus = document.activeElement;
+  $("#sheetTitle").textContent = title;
+  const body = $("#sheetBody");
+  body.innerHTML = "";
+  build(body);
+  $("#sheet").classList.remove("hidden");
+  requestAnimationFrame(() => $("#sheetBody").scrollTop = 0);
+}
+
+function closeSheet() {
+  const el = $("#sheet");
+  if (!el || el.classList.contains("hidden")) return;
+  el.classList.add("hidden");
+  $("#sheetBody").innerHTML = "";
+  if (sheetReturnFocus && sheetReturnFocus.focus) sheetReturnFocus.focus();
+  sheetReturnFocus = null;
+}
+
+function openToolsSheet() {
+  openSheet("What would you like to do?", (body) => {
+    const note = document.createElement("div");
+    note.className = "sheet-note";
+    note.style.padding = "2px 8px 6px";
+    note.textContent = state.selection.size
+      ? `${plural(state.selection.size, "page")} picked — these tools will use them.`
+      : "Some tools ask you to pick pages first.";
+    body.appendChild(note);
+
+    // File actions first — the desktop "+" button has no mobile equivalent.
+    const fileTitle = document.createElement("div");
+    fileTitle.className = "sheet-group-title"; fileTitle.textContent = "File";
+    body.appendChild(fileTitle);
+    const openRow = document.createElement("button");
+    openRow.className = "sheet-tool";
+    openRow.innerHTML = `
+      <span class="ti-tile">${icon("plus")}</span>
+      <span class="sheet-tool-text">
+        <span class="sheet-tool-label">Open another PDF</span>
+        <span class="sheet-tool-desc">Pick a different file from your phone</span>
+      </span>
+      ${icon("next", "icon chev")}`;
+    openRow.onclick = () => { closeSheet(); setTimeout(() => $("#file").click(), 180); };
+    body.appendChild(openRow);
+
+    for (const g of TOOLS) {
+      const t = document.createElement("div");
+      t.className = "sheet-group-title"; t.textContent = g.group;
+      body.appendChild(t);
+      for (const it of g.items) {
+        const b = document.createElement("button");
+        b.className = "sheet-tool";
+        b.setAttribute("aria-label", `${it.label}. ${it.desc}`);
+        b.innerHTML = `
+          <span class="ti-tile">${icon(it.icon)}</span>
+          <span class="sheet-tool-text">
+            <span class="sheet-tool-label">${it.label}</span>
+            <span class="sheet-tool-desc">${it.desc}</span>
+          </span>
+          ${icon("next", "icon chev")}`;
+        b.onclick = () => runTool(it);
+        body.appendChild(b);
+      }
+    }
+  });
+}
+
+// ---- pages sheet: tap to jump, toggle to pick ----
+let sheetSelecting = false;
+
+function openPagesSheet() {
+  sheetSelecting = state.selection.size > 0;
+  openSheet(state.name ? `Pages — ${state.name}` : "Pages", (body) => {
+    const bar = document.createElement("div");
+    bar.className = "sheet-toolbar";
+    bar.innerHTML = `
+      <span class="sheet-note" id="pagesNote"></span>
+      <button class="sheet-toggle" id="pagesToggle" aria-pressed="${sheetSelecting}">
+        ${icon("check")}<span>Select</span>
+      </button>`;
+    body.appendChild(bar);
+
+    const grid = document.createElement("div");
+    grid.className = "page-grid" + (sheetSelecting ? " selecting" : "");
+    grid.id = "pagesGrid";
+
+    for (let i = 0; i < state.pages; i++) {
+      const cell = document.createElement("button");
+      cell.className = "page-cell"
+        + (i === state.page ? " current" : "")
+        + (state.selection.has(i) ? " picked" : "");
+      cell.dataset.page = i;
+      cell.setAttribute("aria-label", `Page ${i + 1}`);
+      cell.innerHTML = `
+        <img loading="lazy" src="/api/session/${state.id}/page/${i}/thumb?w=150&v=${state.version}" alt="">
+        <span class="pc-num">${i + 1}</span>
+        <span class="pc-check">${icon("check")}</span>`;
+      cell.onclick = () => onPageCell(i, cell, grid);
+      grid.appendChild(cell);
+    }
+    body.appendChild(grid);
+
+    const toggle = bar.querySelector("#pagesToggle");
+    toggle.onclick = () => {
+      sheetSelecting = !sheetSelecting;
+      toggle.setAttribute("aria-pressed", String(sheetSelecting));
+      grid.classList.toggle("selecting", sheetSelecting);
+      refreshPagesNote();
+    };
+    refreshPagesNote();
+  });
+}
+
+function refreshPagesNote() {
+  const note = document.getElementById("pagesNote");
+  if (!note) return;
+  const n = state.selection.size;
+  note.textContent = sheetSelecting
+    ? (n ? `${plural(n, "page")} picked — tap more, or close and open Tools.` : "Tap the pages you want to work on.")
+    : "Tap a page to view it.";
+}
+
+function onPageCell(i, cell, grid) {
+  if (sheetSelecting) {
+    if (state.selection.has(i)) state.selection.delete(i); else state.selection.add(i);
+    cell.classList.toggle("picked", state.selection.has(i));
+    refreshThumbActive();
+    updatePageInfo();
+    refreshPagesNote();
+    return;
+  }
+  goPage(i);
+  for (const c of grid.children) c.classList.toggle("current", +c.dataset.page === i);
+  closeSheet();
+}
+
 // ============================================================ init
 function init() {
   renderTools();
@@ -625,5 +780,12 @@ function init() {
   $("#prevBtn").onclick = () => goPage(state.page - 1);
   $("#nextBtn").onclick = () => goPage(state.page + 1);
   $("#clearSel").onclick = () => { state.selection.clear(); refreshThumbActive(); updatePageInfo(); };
+
+  // mobile bottom bar
+  $("#mPages").onclick = openPagesSheet;
+  $("#mTools").onclick = openToolsSheet;
+  $("#mSave").onclick = download;
+  $("#sheetClose").onclick = closeSheet;
+  $("#sheet").querySelector("[data-close]").onclick = closeSheet;
 }
 init();

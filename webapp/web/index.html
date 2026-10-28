@@ -231,6 +231,34 @@
     </main>
   </div>
 
+  <!-- Mobile bottom bar (labels, not icon-only) -->
+  <nav id="mobileBar" class="mobile-bar" aria-label="Mobile actions">
+    <button id="mPages" class="mnav">
+      <svg class="icon"><use href="#i-layers"/></svg><span>Pages</span>
+    </button>
+    <button id="mTools" class="mnav">
+      <svg class="icon"><use href="#i-move"/></svg><span>Tools</span>
+    </button>
+    <button id="mSave" class="mnav accent">
+      <svg class="icon"><use href="#i-download"/></svg><span>Save</span>
+    </button>
+  </nav>
+
+  <!-- Bottom sheet (tools / pages) -->
+  <div id="sheet" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-backdrop" data-close="1"></div>
+    <div class="sheet-card" id="sheetCard">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <h3 id="sheetTitle">Tools</h3>
+        <button class="icon-btn ghost" id="sheetClose" aria-label="Close">
+          <svg class="icon"><use href="#i-x"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body" id="sheetBody"></div>
+    </div>
+  </div>
+
   <!-- Modal host -->
   <div id="modal" class="modal hidden">
     <div class="modal-backdrop"></div>
