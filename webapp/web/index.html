@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF Tool</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+</head>
+<body>
+  <!-- Drop overlay -->
+  <div id="dropzone" class="dropzone hidden">
+    <div class="dropzone-inner">Drop PDF to open</div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="empty" class="empty">
+    <div class="empty-card">
+      <div class="empty-logo">📄</div>
+      <h1>PDF Tool</h1>
+      <p>Open a PDF to start. Everything runs in your browser — nothing leaves the server except the file you choose.</p>
+      <label class="btn primary big" for="file">Open PDF</label>
+      <input type="file" id="file" accept="application/pdf" hidden>
+      <div class="empty-hint">or drag &amp; drop a file anywhere</div>
+    </div>
+  </div>
+
+  <!-- App shell -->
+  <div id="app" class="app hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span class="brand">📄 PDF Tool</span>
+        <button id="newBtn" class="icon-btn" title="New / open another">＋</button>
+      </div>
+      <div class="doc-meta" id="docMeta"></div>
+      <nav class="tools" id="tools"></nav>
+      <div class="sidebar-foot">
+        <button id="downloadBtn" class="btn primary" style="width:100%">Download</button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span id="pageInfo" class="page-info"></span>
+        </div>
+        <div class="toolbar-right">
+          <button id="zoomOut" class="icon-btn" title="Zoom out">−</button>
+          <span id="zoomLabel" class="zoom-label">100%</span>
+          <button id="zoomIn" class="icon-btn" title="Zoom in">＋</button>
+          <button id="zoomFit" class="btn small" title="Fit width">Fit</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Thumbnail strip -->
+        <div class="thumbs-wrap">
+          <div id="thumbs" class="thumbs"></div>
+        </div>
+        <!-- Viewer -->
+        <div class="viewer-wrap">
+          <div id="viewer" class="viewer"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal host -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" id="modalCard"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

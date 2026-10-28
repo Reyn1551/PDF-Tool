@@ -1,0 +1,43 @@
+# PDF Tool web — systemd service
+#
+# Install:
+#   sudo cp deploy/pdftoolweb.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pdftoolweb
+#
+# Adjust User, WorkingDirectory, and ExecStart to your layout. The binary is
+# self-contained (rpath to PDFium); it only needs Ghostscript (gs) on PATH.
+
+[Unit]
+Description=PDF Tool web (Go + PDFium + Ghostscript)
+After=network.target
+
+[Service]
+Type=simple
+User=pdftool
+Group=pdftool
+WorkingDirectory=/opt/pdftool
+ExecStart=/opt/pdftool/bin/pdftoolweb -addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=2
+
+# --- 1 GB RAM tuning -----------------------------------------------------
+# PDFium is serialized to a single worker (1 vCPU), so one process is the
+# whole app. Keep the footprint flat:
+#   - thumbnail cache is byte-budgeted in code (64 MB)
+#   - open documents are bounded by the session store
+# Cap the process and let the kernel OOM-kill rather than thrash the box.
+MemoryMax=768M
+MemoryHigh=640M
+CPUQuota=100%
+TasksMax=64
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/pdftool
+
+[Install]
+WantedBy=multi-user.target
