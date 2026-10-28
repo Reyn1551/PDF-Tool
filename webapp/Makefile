@@ -27,7 +27,9 @@ run: build
 	./bin/pdftoolweb -addr :8080
 
 test:
-	$(GO) test -tags $(TAGS) ./...
+	@test -f $(PDFIUM_DIR)/lib/libpdfium.so || ./build.sh
+	LD_LIBRARY_PATH=$(PDFIUM_DIR)/lib$(if $(LD_LIBRARY_PATH),:$(LD_LIBRARY_PATH)) \
+		$(GO) test -tags $(TAGS) ./...
 
 clean:
 	rm -rf bin

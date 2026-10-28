@@ -14,7 +14,12 @@ const state = {
 };
 
 const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+// ============================================================ icons
+/** Inline SVG sprite reference — crisp, themeable, zero network cost. */
+function icon(name, cls = "icon") {
+  return `<svg class="${cls}"><use href="#i-${name}"/></svg>`;
+}
 
 // ============================================================ api
 async function api(path, opts = {}) {
@@ -35,9 +40,10 @@ const postJSON = (path, obj) =>
 
 // ============================================================ toast + busy
 let toastTimer = null;
-function toast(msg, kind = "") {
+function toast(msg, kind = "ok") {
   const t = $("#toast");
-  t.textContent = msg;
+  t.querySelector(".toast-icon use").setAttribute("href", kind === "err" ? "#i-alert" : "#i-check");
+  t.querySelector(".toast-msg").textContent = msg;
   t.className = "toast " + kind;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add("hidden"), 3200);
@@ -45,11 +51,19 @@ function toast(msg, kind = "") {
 function busy(on) { document.body.classList.toggle("busy", on); }
 
 // ============================================================ modal
-function modal({ title, sub, fields, okText = "Apply", onOk, danger = false }) {
+function modal({ title, sub, fields, okText = "Apply", onOk, danger = false, iconName = "doc" }) {
   const card = $("#modalCard");
   card.innerHTML = "";
-  const h = document.createElement("h3"); h.textContent = title; card.appendChild(h);
+
+  const head = document.createElement("div");
+  head.className = "modal-head";
+  head.innerHTML = `<span class="m-tile${danger ? " danger" : ""}">${icon(iconName)}</span>`;
+  const h = document.createElement("h3"); h.textContent = title;
+  head.appendChild(h);
+  card.appendChild(head);
+
   if (sub) { const p = document.createElement("p"); p.className = "modal-sub"; p.innerHTML = sub; card.appendChild(p); }
+
   const inputs = {};
   for (const f of fields) {
     const wrap = document.createElement("div");
@@ -81,9 +95,11 @@ function modal({ title, sub, fields, okText = "Apply", onOk, danger = false }) {
     }
     card.appendChild(wrap);
   }
+
   const actions = document.createElement("div"); actions.className = "modal-actions";
   const cancel = document.createElement("button"); cancel.className = "btn"; cancel.textContent = "Cancel";
-  const ok = document.createElement("button"); ok.className = "btn " + (danger ? "danger" : "primary"); ok.textContent = okText;
+  const ok = document.createElement("button"); ok.className = "btn " + (danger ? "danger" : "primary");
+  ok.innerHTML = icon(iconName) + `<span>${okText}</span>`;
   actions.appendChild(cancel); actions.appendChild(ok); card.appendChild(actions);
 
   const close = () => $("#modal").classList.add("hidden");
@@ -109,7 +125,7 @@ async function openFile(file) {
     fd.append("file", file);
     const s = await api("/api/upload", { method: "POST", body: fd });
     adoptSession(s);
-    toast(`Opened ${s.name} (${s.pages} pages)`, "ok");
+    toast(`Opened ${s.name} · ${s.pages} pages`);
   } catch (e) {
     toast("Failed to open: " + e.message, "err");
   } finally { busy(false); }
@@ -129,7 +145,13 @@ function adoptSession(s) {
 
 function renderMeta() {
   const kb = state.size ? (state.size / 1024).toFixed(0) + " KB" : "";
-  $("#docMeta").innerHTML = `<b>${escapeHtml(state.name)}</b><br>${state.pages} pages · ${kb}<br>v${state.version}`;
+  $("#docMeta").innerHTML = `
+    <div class="doc-name">${icon("doc")}<span>${escapeHtml(state.name)}</span></div>
+    <div class="doc-stats">
+      <span class="pill">${state.pages} pages</span>
+      ${kb ? `<span class="pill">${kb}</span>` : ""}
+      <span class="pill">v${state.version}</span>
+    </div>`;
 }
 
 function escapeHtml(s) {
@@ -137,16 +159,14 @@ function escapeHtml(s) {
 }
 
 // ============================================================ thumbnails (virtualized)
-const THUMB_H = 176; // approx rendered height per thumb incl. number bar
+const THUMB_H = 186; // approx row height incl. gap
 let thumbEls = new Map(); // index -> element
-let thumbTop = 0;
 
 function renderThumbs() {
   const strip = $("#thumbs");
   strip.innerHTML = "";
   thumbEls.clear();
-  // total height spacer for scroll
-  strip.style.minHeight = (state.pages * (THUMB_H + 10)) + "px";
+  strip.style.minHeight = (state.pages * THUMB_H + 12) + "px";
   strip.onscroll = onThumbScroll;
   onThumbScroll();
 }
@@ -154,41 +174,41 @@ function renderThumbs() {
 function onThumbScroll() {
   const strip = $("#thumbs");
   const top = strip.scrollTop;
-  const viewH = strip.clientHeight;
-  const first = Math.max(0, Math.floor(top / (THUMB_H + 10)) - 2);
-  const last = Math.min(state.pages - 1, Math.ceil((top + viewH) / (THUMB_H + 10)) + 2);
-  // remove out-of-range
+  const viewH = strip.clientHeight || 600;
+  const first = Math.max(0, Math.floor(top / THUMB_H) - 2);
+  const last = Math.min(state.pages - 1, Math.ceil((top + viewH) / THUMB_H) + 2);
+
   for (const [idx, el] of thumbEls) {
     if (idx < first || idx > last) { el.remove(); thumbEls.delete(idx); }
   }
-  // add in-range
   for (let i = first; i <= last; i++) {
     if (thumbEls.has(i)) continue;
-    thumbEls.set(i, makeThumb(i));
-    strip.appendChild(thumbEls.get(i));
+    const el = makeThumb(i);
+    thumbEls.set(i, el);
+    strip.appendChild(el);
   }
-  // keep order
-  const ordered = [];
-  for (let i = first; i <= last; i++) if (thumbEls.has(i)) ordered.push(i);
-  for (const i of ordered) strip.appendChild(thumbEls.get(i));
 }
 
 function makeThumb(i) {
   const el = document.createElement("div");
   el.className = "thumb" + (i === state.page ? " active" : "") + (state.selection.has(i) ? " selected" : "");
-  el.style.position = "absolute";
-  el.style.top = (i * (THUMB_H + 10)) + "px";
+  el.style.top = (i * THUMB_H + 8) + "px";
   el.style.left = "50%";
   el.style.transform = "translateX(-50%)";
+  el.setAttribute("role", "button");
+  el.setAttribute("aria-label", `Page ${i + 1}`);
+
   const spin = document.createElement("div"); spin.className = "thumb-spin";
   const img = new Image();
-  img.alt = "page " + (i + 1);
+  img.alt = "";
   img.loading = "lazy";
   img.src = `/api/session/${state.id}/page/${i}/thumb?w=${state.thumbW}&v=${state.version}`;
   img.onload = () => spin.remove();
   img.onerror = () => spin.remove();
+
   const num = document.createElement("div"); num.className = "thumb-num"; num.textContent = i + 1;
-  const check = document.createElement("div"); check.className = "thumb-check"; check.textContent = "✓";
+  const check = document.createElement("div"); check.className = "thumb-check"; check.innerHTML = icon("check");
+
   el.appendChild(spin); el.appendChild(img); el.appendChild(num); el.appendChild(check);
   el.onclick = () => { state.page = i; refreshThumbActive(); renderViewer(); updatePageInfo(); };
   el.oncontextmenu = (e) => { e.preventDefault(); toggleSelect(i); };
@@ -204,6 +224,7 @@ function refreshThumbActive() {
 function toggleSelect(i) {
   if (state.selection.has(i)) state.selection.delete(i); else state.selection.add(i);
   refreshThumbActive();
+  updatePageInfo();
 }
 
 // ============================================================ viewer
@@ -213,18 +234,40 @@ function renderViewer() {
   if (!state.id) return;
   const width = Math.round(760 * state.zoom);
   const img = new Image();
-  img.className = "page";
+  img.alt = `Page ${state.page + 1}`;
   img.src = `/api/session/${state.id}/page/${state.page}/full?w=${width}&v=${state.version}`;
   const wrap = document.createElement("div"); wrap.className = "page";
   wrap.appendChild(img);
-  const num = document.createElement("div"); num.className = "page-num"; num.textContent = "Page " + (state.page + 1) + " / " + state.pages;
-  v.appendChild(wrap); v.appendChild(num);
+  v.appendChild(wrap);
+  const label = document.createElement("div"); label.className = "page-num";
+  label.textContent = `Page ${state.page + 1} / ${state.pages}`;
+  v.appendChild(label);
   $("#zoomLabel").textContent = Math.round(state.zoom * 100) + "%";
 }
 
 function updatePageInfo() {
   const sel = state.selection.size;
-  $("#pageInfo").textContent = `Page ${state.page + 1} of ${state.pages}` + (sel ? ` · ${sel} selected` : "");
+  $("#pageInfo").textContent = `Page ${state.page + 1} of ${state.pages}`;
+  const selInfo = $("#selInfo");
+  if (sel) {
+    selInfo.textContent = `${sel} selected`;
+    selInfo.classList.add("sel-active");
+    $("#clearSel").classList.remove("hidden");
+  } else {
+    selInfo.textContent = "Pages";
+    selInfo.classList.remove("sel-active");
+    $("#clearSel").classList.add("hidden");
+  }
+  $("#prevBtn").disabled = state.page <= 0;
+  $("#nextBtn").disabled = state.page >= state.pages - 1;
+}
+
+function goPage(n) {
+  state.page = Math.max(0, Math.min(state.pages - 1, n));
+  renderViewer();
+  updatePageInfo();
+  scrollThumbTo(state.page);
+  refreshThumbActive();
 }
 
 function zoomBy(d) {
@@ -235,24 +278,24 @@ function zoomBy(d) {
 // ============================================================ tools
 const TOOLS = [
   { group: "Organize", items: [
-    { icon: "🗑️", label: "Delete pages", act: deletePages },
-    { icon: "🔄", label: "Rotate", act: rotateModal },
-    { icon: "↔️", label: "Reverse order", act: reverse },
-    { icon: "✂️", label: "Split (extract range)", act: splitModal },
-    { icon: "🔀", label: "Reorder (move selected)", act: reorderSelected },
+    { icon: "trash",    label: "Delete pages",           act: deletePages },
+    { icon: "rotate",   label: "Rotate",                 act: rotateModal },
+    { icon: "reverse",  label: "Reverse order",          act: reverse },
+    { icon: "split",    label: "Split (extract range)",  act: splitModal },
+    { icon: "move",     label: "Reorder selected pages", act: reorderSelected },
   ]},
   { group: "Security", items: [
-    { icon: "🔒", label: "Protect (password)", act: protectModal },
-    { icon: "🔓", label: "Unlock", act: unlockModal },
-    { icon: "💧", label: "Watermark", act: watermarkModal },
-    { icon: "⬛", label: "Redact", act: redactModal },
+    { icon: "lock",      label: "Protect (password)", act: protectModal },
+    { icon: "lock-open", label: "Unlock",             act: unlockModal },
+    { icon: "watermark", label: "Watermark",          act: watermarkModal },
+    { icon: "redact",    label: "Redact",             act: redactModal },
   ]},
   { group: "Optimize", items: [
-    { icon: "📦", label: "Compress", act: compressModal },
+    { icon: "compress", label: "Compress", act: compressModal },
   ]},
   { group: "Export", items: [
-    { icon: "📝", label: "Extract text", act: exportText },
-    { icon: "🖼️", label: "Export images", act: exportImagesModal },
+    { icon: "text",  label: "Extract text",   act: exportText },
+    { icon: "image", label: "Export images",  act: exportImagesModal },
   ]},
 ];
 
@@ -261,11 +304,14 @@ function renderTools() {
   nav.innerHTML = "";
   for (const g of TOOLS) {
     const grp = document.createElement("div"); grp.className = "tool-group";
-    const t = document.createElement("div"); t.className = "tool-group-title"; t.textContent = g.group; grp.appendChild(t);
+    const t = document.createElement("div"); t.className = "tool-group-title"; t.textContent = g.group;
+    grp.appendChild(t);
     for (const it of g.items) {
       const b = document.createElement("button"); b.className = "tool-item";
-      b.innerHTML = `<span class="ti-icon">${it.icon}</span><span>${it.label}</span>`;
-      b.onclick = () => { if (!state.id) return; busy(true); it.act().finally(() => busy(false)); };
+      b.title = it.label;                 // tooltip for the mobile icon rail
+      b.setAttribute("aria-label", it.label);
+      b.innerHTML = `<span class="ti-tile">${icon(it.icon)}</span><span class="ti-label">${it.label}</span>`;
+      b.onclick = () => { if (!state.id) return; busy(true); Promise.resolve(it.act()).finally(() => busy(false)); };
       grp.appendChild(b);
     }
     nav.appendChild(grp);
@@ -273,7 +319,10 @@ function renderTools() {
 }
 
 function requireSel() {
-  if (state.selection.size === 0) { toast("Select pages first (right-click thumbnails)", "err"); throw new Error("no selection"); }
+  if (state.selection.size === 0) {
+    toast("Select pages first — right-click a thumbnail", "err");
+    throw new Error("no selection");
+  }
   return [...state.selection].sort((a, b) => a - b);
 }
 
@@ -282,10 +331,9 @@ async function deletePages() {
   const pages = requireSel();
   modal({
     title: "Delete pages",
-    sub: `Remove ${pages.length} page(s): ${pages.map(p => p + 1).join(", ")}`,
+    sub: `Remove ${pages.length} page(s): ${pages.map(p => p + 1).join(", ")}. This cannot be undone.`,
+    iconName: "trash", danger: true, okText: "Delete",
     fields: [],
-    okText: "Delete",
-    danger: true,
     onOk: async () => {
       const s = await postJSON(`/api/session/${state.id}/delete`, { pages });
       applyEdit(s);
@@ -297,8 +345,9 @@ async function rotateModal() {
   const pages = requireSel();
   modal({
     title: "Rotate pages",
-    sub: `Rotate ${pages.length} page(s)`,
-    fields: [{ key: "deg", label: "Angle (clockwise)", type: "select", value: "90",
+    sub: `Rotate ${pages.length} selected page(s) clockwise.`,
+    iconName: "rotate",
+    fields: [{ key: "deg", label: "Angle", type: "select", value: "90",
       options: [{ value: "90", label: "90°" }, { value: "180", label: "180°" }, { value: "270", label: "270°" }] }],
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/rotate`, { pages, deg: +v.deg });
@@ -310,8 +359,9 @@ async function rotateModal() {
 async function reverse() {
   modal({
     title: "Reverse page order",
-    sub: "Flip the whole document.",
-    fields: [], okText: "Reverse",
+    sub: "Flip the whole document end-to-end.",
+    iconName: "reverse", okText: "Reverse",
+    fields: [],
     onOk: async () => { const s = await postJSON(`/api/session/${state.id}/reverse`, {}); applyEdit(s); },
   });
 }
@@ -319,58 +369,51 @@ async function reverse() {
 async function splitModal() {
   modal({
     title: "Split — extract a range",
-    sub: "Creates a new document from the selected pages (1-based, inclusive).",
+    sub: "Creates a new document from the pages you choose (1-based, inclusive).",
+    iconName: "split", okText: "Extract",
     fields: [
       { row: true, row: [
         { key: "start", label: "From page", type: "number", value: 1, min: 1 },
         { key: "end", label: "To page", type: "number", value: state.pages, min: 1 },
       ]},
     ],
-    okText: "Extract",
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/split`, { start: +v.start, end: +v.end });
       adoptSession(s);
-      toast(`Extracted ${s.pages} pages`, "ok");
+      toast(`Extracted ${s.pages} pages`);
     },
   });
 }
 
 async function reorderSelected() {
   const pages = requireSel();
-  // move selected block to a target position
   modal({
     title: "Move selected pages",
     sub: `Move ${pages.length} page(s) to a new position.`,
-    fields: [{ key: "pos", label: "Insert before page (1-based)", type: "number", value: 1, min: 1, max: state.pages + 1 }],
-    okText: "Move",
+    iconName: "move", okText: "Move",
+    fields: [{ key: "pos", label: "Insert before page", type: "number", value: 1, min: 1, max: state.pages + 1 }],
     onOk: async (v) => {
       const pos = Math.max(0, Math.min(state.pages, +v.pos - 1));
-      const order = buildMoveOrder(pages, pos);
+      const set = new Set(pages);
+      const rest = [];
+      for (let i = 0; i < state.pages; i++) if (!set.has(i)) rest.push(i);
+      const order = rest.slice(0, pos).concat(pages).concat(rest.slice(pos));
       const s = await postJSON(`/api/session/${state.id}/reorder`, { order });
       applyEdit(s);
     },
   });
 }
 
-// produce a full permutation that moves `pages` to just before index `pos`
-function buildMoveOrder(pages, pos) {
-  const set = new Set(pages);
-  const rest = [];
-  for (let i = 0; i < state.pages; i++) if (!set.has(i)) rest.push(i);
-  const out = rest.slice(0, pos).concat(pages).concat(rest.slice(pos));
-  return out;
-}
-
 // ---- security
 async function protectModal() {
   modal({
     title: "Protect with password",
-    sub: "Encrypt the document. You'll need this password to open it again.",
+    sub: "Encrypt the document. You will need this password to open it again.",
+    iconName: "lock", okText: "Protect",
     fields: [
       { key: "user", label: "Open password", type: "password", placeholder: "required" },
-      { key: "owner", label: "Owner password (optional)", type: "password", placeholder: "restricts editing/printing" },
+      { key: "owner", label: "Owner password (optional)", type: "password", placeholder: "restricts editing & printing" },
     ],
-    okText: "Protect",
     onOk: async (v) => {
       if (!v.user) throw new Error("open password required");
       const s = await postJSON(`/api/session/${state.id}/protect`, { user: v.user, owner: v.owner });
@@ -382,9 +425,9 @@ async function protectModal() {
 async function unlockModal() {
   modal({
     title: "Unlock",
-    sub: "Remove the password.",
+    sub: "Remove the password from this document.",
+    iconName: "lock-open", okText: "Unlock",
     fields: [{ key: "password", label: "Password", type: "password" }],
-    okText: "Unlock",
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/unlock`, { password: v.password });
       applyEdit(s);
@@ -396,6 +439,7 @@ async function watermarkModal() {
   modal({
     title: "Watermark",
     sub: "Stamp text on every page.",
+    iconName: "watermark",
     fields: [
       { key: "text", label: "Text", type: "text", value: "CONFIDENTIAL" },
       { key: "wRatio", label: "Width (% of page)", type: "range", min: 10, max: 100, step: 5, value: 50 },
@@ -403,7 +447,6 @@ async function watermarkModal() {
       { key: "pos", label: "Position", type: "select", value: "center",
         options: [{ value: "center", label: "Center" }, { value: "tl", label: "Top-left" }, { value: "tr", label: "Top-right" }, { value: "bl", label: "Bottom-left" }, { value: "br", label: "Bottom-right" }] },
     ],
-    okText: "Apply",
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/watermark`, {
         text: v.text, wRatio: +v.wRatio / 100, hRatio: +v.hRatio / 100, pos: v.pos,
@@ -417,7 +460,8 @@ async function redactModal() {
   const page = state.page;
   modal({
     title: "Redact (white-out)",
-    sub: `Draw a box on page ${page + 1} to permanently white-out. Coordinates are fractions of the page (0–1, origin top-left).`,
+    sub: `Draw a box on page ${page + 1}. Coordinates are fractions of the page (0–1, origin top-left).`,
+    iconName: "redact", danger: true, okText: "Redact",
     fields: [
       { row: true, row: [
         { key: "x", label: "X (left)", type: "number", value: 0.1, step: 0.05 },
@@ -428,8 +472,6 @@ async function redactModal() {
         { key: "h", label: "Height", type: "number", value: 0.1, step: 0.05 },
       ]},
     ],
-    okText: "Redact",
-    danger: true,
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/redact`, {
         rects: [{ page, x: +v.x, y: +v.y, w: +v.w, h: +v.h }],
@@ -443,10 +485,10 @@ async function redactModal() {
 async function compressModal() {
   modal({
     title: "Compress",
-    sub: "Re-encode with Ghostscript. Lower quality = smaller file.",
+    sub: "Re-encode with Ghostscript. Lower quality means a smaller file.",
+    iconName: "compress", okText: "Compress",
     fields: [{ key: "level", label: "Quality", type: "select", value: "1",
       options: [{ value: "0", label: "Smallest (72 dpi)" }, { value: "1", label: "Balanced (150 dpi)" }, { value: "2", label: "High (300 dpi)" }] }],
-    okText: "Compress",
     onOk: async (v) => {
       const s = await postJSON(`/api/session/${state.id}/compress`, { level: +v.level });
       applyEdit(s);
@@ -458,30 +500,28 @@ async function compressModal() {
 async function exportText() {
   const res = await fetch(`/api/session/${state.id}/export/text`);
   const text = await res.text();
-  const blob = new Blob([text], { type: "text/plain" });
-  downloadBlob(blob, state.name.replace(/\.pdf$/i, "") + ".txt");
-  toast("Text exported", "ok");
+  downloadBlob(new Blob([text], { type: "text/plain" }), state.name.replace(/\.pdf$/i, "") + ".txt");
+  toast("Text exported");
 }
 
 async function exportImagesModal() {
   modal({
     title: "Export images",
     sub: "Render every page to an image.",
+    iconName: "image", okText: "Export",
     fields: [
       { key: "fmt", label: "Format", type: "select", value: "png", options: [{ value: "png", label: "PNG" }, { value: "jpg", label: "JPG" }] },
       { key: "w", label: "Width (px)", type: "number", value: 1100, min: 100 },
     ],
-    okText: "Export",
     onOk: async (v) => {
       const q = v.fmt === "jpg" ? `&fmt=jpg&q=85` : "";
       const data = await api(`/api/session/${state.id}/export/images?w=${v.w}${q}`);
-      // download each
       for (const [name, dataUrl] of Object.entries(data)) {
         const a = document.createElement("a");
         a.href = dataUrl; a.download = name;
         document.body.appendChild(a); a.click(); a.remove();
       }
-      toast(`Exported ${Object.keys(data).length} images`, "ok");
+      toast(`Exported ${Object.keys(data).length} images`);
     },
   });
 }
@@ -499,13 +539,12 @@ function applyEdit(s) {
   state.pages = s.pages; state.version = s.version; state.size = s.size;
   state.name = s.name;
   if (state.page >= state.pages) state.page = state.pages - 1;
-  // prune selection
   for (const p of [...state.selection]) if (p >= state.pages) state.selection.delete(p);
   renderMeta();
   renderThumbs();
   renderViewer();
   updatePageInfo();
-  toast("Done", "ok");
+  toast("Done");
 }
 
 // ============================================================ download
@@ -515,6 +554,7 @@ async function download() {
     const res = await fetch(`/api/session/${state.id}/download`);
     const blob = await res.blob();
     downloadBlob(blob, state.name.replace(/\.pdf$/i, "") + "-edited.pdf");
+    toast("Download started");
   } catch (e) { toast("Download failed: " + e.message, "err"); }
   finally { busy(false); }
 }
@@ -535,21 +575,25 @@ function setupDnD() {
 // ============================================================ keyboard
 function setupKeys() {
   window.addEventListener("keydown", (e) => {
-    if ($("#modal").classList.contains("hidden") === false) {
+    if (!$("#modal").classList.contains("hidden")) {
       if (e.key === "Escape") $("#modal").classList.add("hidden");
       return;
     }
     if (!state.id) return;
-    if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); if (state.page < state.pages - 1) { state.page++; renderViewer(); updatePageInfo(); scrollThumbTo(state.page); } }
-    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); if (state.page > 0) { state.page--; renderViewer(); updatePageInfo(); scrollThumbTo(state.page); } }
-    else if (e.key === "Delete" && state.selection.size) { e.preventDefault(); deletePages().catch(() => {}); }
+    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || "");
+    if (typing) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); goPage(state.page + 1); }
+    else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); goPage(state.page - 1); }
+    else if (e.key === "Delete" && state.selection.size) { e.preventDefault(); Promise.resolve(deletePages()).catch(() => {}); }
     else if (e.key === "+" || e.key === "=") { zoomBy(0.1); }
     else if (e.key === "-") { zoomBy(-0.1); }
+    else if (e.key === "Home") { e.preventDefault(); goPage(0); }
+    else if (e.key === "End") { e.preventDefault(); goPage(state.pages - 1); }
   });
 }
 function scrollThumbTo(i) {
   const strip = $("#thumbs");
-  const target = i * (THUMB_H + 10) - strip.clientHeight / 2 + THUMB_H / 2;
+  const target = i * THUMB_H - strip.clientHeight / 2 + THUMB_H / 2;
   strip.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
 }
 
@@ -564,5 +608,8 @@ function init() {
   $("#zoomIn").onclick = () => zoomBy(0.1);
   $("#zoomOut").onclick = () => zoomBy(-0.1);
   $("#zoomFit").onclick = () => { state.zoom = 1.0; renderViewer(); };
+  $("#prevBtn").onclick = () => goPage(state.page - 1);
+  $("#nextBtn").onclick = () => goPage(state.page + 1);
+  $("#clearSel").onclick = () => { state.selection.clear(); refreshThumbActive(); updatePageInfo(); };
 }
 init();
