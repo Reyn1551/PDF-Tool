@@ -137,7 +137,7 @@
         </svg>
       </div>
       <h1>Let's tidy up that PDF</h1>
-      <p>Merge, split, compress, sign or lock a document — right here, without installing anything. Your file stays on this server and never touches a third party.</p>
+      <p>Split, reorder, compress, watermark or lock a document, right here, without installing anything. Your file stays on this server and never touches a third party.</p>
       <label class="btn primary big" for="file">
         <svg class="icon"><use href="#i-doc"/></svg>
         Choose a PDF
@@ -208,7 +208,7 @@
             <button id="zoomIn" class="icon-btn ghost" title="Zoom in (+)" aria-label="Zoom in">
               <svg class="icon"><use href="#i-zoom-in"/></svg>
             </button>
-            <button id="zoomFit" class="icon-btn ghost" title="Reset zoom to 100%" aria-label="Reset zoom">
+            <button id="zoomFit" class="icon-btn ghost" title="Fit page to window" aria-label="Fit page to window">
               <svg class="icon"><use href="#i-fit"/></svg>
             </button>
           </div>
@@ -221,7 +221,7 @@
             <span id="selInfo" class="sel-info">Pages</span>
             <button id="clearSel" class="link-btn hidden">Clear</button>
           </div>
-          <div class="thumbs-hint" id="thumbsHint">Right-click a page to pick it</div>
+          <div class="thumbs-hint" id="thumbsHint">Right-click or press X on a page to pick it</div>
           <div id="thumbs" class="thumbs"></div>
         </div>
         <div class="viewer-wrap">
@@ -266,7 +266,7 @@
   </div>
 
   <!-- Toast -->
-  <div id="toast" class="toast hidden">
+  <div id="toast" class="toast hidden" role="status" aria-live="polite">
     <svg class="icon toast-icon"><use href="#i-check"/></svg>
     <span class="toast-msg"></span>
   </div>
