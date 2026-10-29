@@ -95,7 +95,10 @@ function modal({ title, sub, fields, okText = "Apply", onOk, danger = false, ico
         el.min = it.min; el.max = it.max; el.step = it.step; el.value = it.value;
         const span = document.createElement("span"); span.className = "range-val"; span.textContent = it.value;
         el.addEventListener("input", () => span.textContent = el.value);
-        div.appendChild(el); div.appendChild(span);
+        const top = document.createElement("div"); top.className = "field-top";
+        div.insertBefore(top, lab);
+        top.appendChild(lab); top.appendChild(span);
+        div.appendChild(el);
       } else if (it.type === "select") {
         el = document.createElement("select");
         for (const o of it.options) { const op = document.createElement("option"); op.value = o.value; op.textContent = o.label; el.appendChild(op); }
@@ -105,6 +108,9 @@ function modal({ title, sub, fields, okText = "Apply", onOk, danger = false, ico
         el = document.createElement("input"); el.type = it.type || "text";
         if (it.value != null) el.value = it.value;
         if (it.placeholder) el.placeholder = it.placeholder;
+        if (it.min != null) el.min = it.min;
+        if (it.max != null) el.max = it.max;
+        if (it.step != null) el.step = it.step;
         div.appendChild(el);
       }
       inputs[it.key] = el;
@@ -231,6 +237,7 @@ function makeThumb(i) {
   el.style.transform = "translateX(-50%)";
   el.setAttribute("role", "button");
   el.setAttribute("aria-label", `Page ${i + 1}`);
+  el.tabIndex = 0;
 
   const spin = document.createElement("div"); spin.className = "thumb-spin";
   const img = new Image();
@@ -246,6 +253,10 @@ function makeThumb(i) {
   el.appendChild(spin); el.appendChild(img); el.appendChild(num); el.appendChild(check);
   el.onclick = () => { state.page = i; refreshThumbActive(); renderViewer(); updatePageInfo(); };
   el.oncontextmenu = (e) => { e.preventDefault(); toggleSelect(i); };
+  el.onkeydown = (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); }
+    else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "Enter")) { e.preventDefault(); toggleSelect(i); }
+  };
   return el;
 }
 
@@ -312,6 +323,14 @@ function zoomBy(d) {
   renderViewer();
 }
 
+/** Fit the page to the viewer width (base render width is 760px). */
+function fitZoom() {
+  const wrap = document.querySelector(".viewer-wrap");
+  const avail = (wrap ? wrap.clientWidth : 800) - 56;
+  state.zoom = Math.min(3, Math.max(0.4, avail / 760));
+  renderViewer();
+}
+
 // ============================================================ tools
 const TOOLS = [
   { group: "Organize", items: [
@@ -369,8 +388,8 @@ function requireSel() {
   if (state.selection.size === 0) {
     const mobile = window.matchMedia("(max-width: 720px)").matches;
     toast(mobile
-      ? "Pick pages first — tap Pages at the bottom, then Select."
-      : "Pick a page first — right-click any thumbnail.", "err");
+      ? "Pick pages first: tap Pages at the bottom, then Select."
+      : "Pick a page first: right-click a thumbnail or press X.", "err");
     throw new Error("no selection");
   }
   return [...state.selection].sort((a, b) => a - b);
@@ -431,12 +450,16 @@ async function splitModal() {
     iconName: "split", okText: "Extract pages",
     fields: [
       { row: true, row: [
-        { key: "start", label: "From page", type: "number", value: 1, min: 1 },
-        { key: "end", label: "To page", type: "number", value: state.pages, min: 1 },
+        { key: "start", label: "From page", type: "number", value: 1, min: 1, max: state.pages },
+        { key: "end", label: "To page", type: "number", value: state.pages, min: 1, max: state.pages },
       ]},
     ],
     onOk: async (v) => {
-      const s = await postJSON(`/api/session/${state.id}/split`, { start: +v.start, end: +v.end });
+      const clampPage = (n, dflt) => Math.max(1, Math.min(state.pages, Number(n) || dflt));
+      let start = clampPage(v.start, 1);
+      let end = clampPage(v.end, state.pages);
+      if (start > end) [start, end] = [end, start];
+      const s = await postJSON(`/api/session/${state.id}/split`, { start, end });
       adoptSession(s);
       toast(`Extracted ${s.pages} pages`);
     },
@@ -532,8 +555,12 @@ async function redactModal() {
       ]},
     ],
     onOk: async (v) => {
+      const frac = (n, dflt) => {
+        const x = Number(n);
+        return Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : dflt;
+      };
       const s = await postJSON(`/api/session/${state.id}/redact`, {
-        rects: [{ page, x: +v.x, y: +v.y, w: +v.w, h: +v.h }],
+        rects: [{ page, x: frac(v.x, 0.1), y: frac(v.y, 0.1), w: frac(v.w, 0.3), h: frac(v.h, 0.1) }],
       });
       applyEdit(s, `Area on page ${page + 1} is now hidden`);
     },
@@ -574,11 +601,12 @@ async function exportImagesModal() {
     iconName: "image", okText: "Save images",
     fields: [
       { key: "fmt", label: "Format", type: "select", value: "png", options: [{ value: "png", label: "PNG" }, { value: "jpg", label: "JPG" }] },
-      { key: "w", label: "Width (px)", type: "number", value: 1100, min: 100 },
+      { key: "w", label: "Width (px)", type: "number", value: 1100, min: 100, max: 4096 },
     ],
     onOk: async (v) => {
+      const w = Math.max(100, Math.min(4096, Number(v.w) || 1100));
       const q = v.fmt === "jpg" ? `&fmt=jpg&q=85` : "";
-      const data = await api(`/api/session/${state.id}/export/images?w=${v.w}${q}`);
+      const data = await api(`/api/session/${state.id}/export/images?w=${w}${q}`);
       for (const [name, dataUrl] of Object.entries(data)) {
         const a = document.createElement("a");
         a.href = dataUrl; a.download = name;
@@ -659,6 +687,7 @@ function setupKeys() {
     if (typing) return;
     if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); goPage(state.page + 1); }
     else if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); goPage(state.page - 1); }
+    else if (e.key === "x" || e.key === "X") { e.preventDefault(); toggleSelect(state.page); }
     else if (e.key === "Delete" && state.selection.size) { e.preventDefault(); Promise.resolve(deletePages()).catch(() => {}); }
     else if (e.key === "+" || e.key === "=") { zoomBy(0.1); }
     else if (e.key === "-") { zoomBy(-0.1); }
@@ -821,7 +850,7 @@ function init() {
   $("#downloadBtn").onclick = download;
   $("#zoomIn").onclick = () => zoomBy(0.1);
   $("#zoomOut").onclick = () => zoomBy(-0.1);
-  $("#zoomFit").onclick = () => { state.zoom = 1.0; renderViewer(); };
+  $("#zoomFit").onclick = fitZoom;
   $("#prevBtn").onclick = () => goPage(state.page - 1);
   $("#nextBtn").onclick = () => goPage(state.page + 1);
   $("#clearSel").onclick = () => { state.selection.clear(); refreshThumbActive(); updatePageInfo(); };
