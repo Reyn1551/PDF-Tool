@@ -11,16 +11,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
+	"time"
 
 	"github.com/klippa-app/go-pdfium/references"
 )
 
 // Session is one open PDF document.
 type Session struct {
-	ID     string
-	Name   string
-	Doc    references.FPDF_DOCUMENT
-	Pages  int
+	ID    string
+	Name  string
+	Doc   references.FPDF_DOCUMENT
+	Pages int
 	// Version increments on every edit so the thumbnail cache and the client
 	// can invalidate stale bitmaps.
 	Version int
@@ -29,6 +30,9 @@ type Session struct {
 	// Password is set when the document is encrypted, so it can be re-opened
 	// after an edit.
 	Password string
+	// lastSeen is bumped on every access; idle sessions are swept so an
+	// abandoned tab cannot pin memory forever on a public instance.
+	lastSeen time.Time
 }
 
 // Store owns all sessions.
@@ -47,16 +51,43 @@ func (s *Store) Add(name string, doc references.FPDF_DOCUMENT, pages int, size i
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := newID()
-	ses := &Session{ID: id, Name: name, Doc: doc, Pages: pages, Size: size, Version: 1}
+	ses := &Session{ID: id, Name: name, Doc: doc, Pages: pages, Size: size, Version: 1, lastSeen: time.Now()}
 	s.ses[id] = ses
 	return ses
 }
 
-// Get returns a session or nil.
+// Get returns a session or nil, marking it as recently used.
 func (s *Store) Get(id string) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.ses[id]
+	ses := s.ses[id]
+	if ses != nil {
+		ses.lastSeen = time.Now()
+	}
+	return ses
+}
+
+// Count reports how many sessions are open.
+func (s *Store) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.ses)
+}
+
+// Sweep removes sessions idle longer than ttl and returns them so the caller
+// can close their PDFium documents.
+func (s *Store) Sweep(ttl time.Duration) []*Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := time.Now().Add(-ttl)
+	var dropped []*Session
+	for id, ses := range s.ses {
+		if ses.lastSeen.Before(cutoff) {
+			delete(s.ses, id)
+			dropped = append(dropped, ses)
+		}
+	}
+	return dropped
 }
 
 // All returns a snapshot of every session id.
@@ -88,6 +119,7 @@ func (s *Store) Bump(ses *Session, pages int, size int64) {
 	ses.Version++
 	ses.Pages = pages
 	ses.Size = size
+	ses.lastSeen = time.Now()
 }
 
 func newID() string {
@@ -109,11 +141,11 @@ type thumbEntry struct {
 
 // ThumbCache is a byte-budgeted LRU of rendered page thumbnails.
 type ThumbCache struct {
-	mu      sync.Mutex
-	budget  int64
-	used    int64
-	ll      *list.List
-	index   map[thumbKey]*list.Element
+	mu     sync.Mutex
+	budget int64
+	used   int64
+	ll     *list.List
+	index  map[thumbKey]*list.Element
 }
 
 // NewThumbCache creates a cache that holds at most budget bytes.

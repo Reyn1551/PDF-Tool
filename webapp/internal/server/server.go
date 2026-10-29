@@ -5,6 +5,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,9 +14,12 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"pdftoolweb/internal/ops"
@@ -25,23 +29,60 @@ import (
 
 // Server holds shared state.
 type Server struct {
-	Pool  *pdfiumx.Pool
-	Store *store.Store
+	// apiMu serializes every /api/ request. PDFium handles are closed and
+	// replaced per edit; without this lock two tabs editing the same session
+	// could race a use-after-free on the native handle. The engine is
+	// single-threaded anyway, so this costs nothing.
+	apiMu  sync.Mutex
+	Pool   *pdfiumx.Pool
+	Store  *store.Store
 	Thumbs *store.ThumbCache
 	// MaxUpload is the largest accepted PDF in bytes.
 	MaxUpload int64
+	// UploadsPerHour caps uploads per client IP (0 disables the limit).
+	UploadsPerHour int
+	limiter        *rateLimiter
 	// Static is the embedded web assets (index.html, app.js, style.css).
 	Static fs.FS
 }
 
+// Resource bounds, chosen for a 1 GB box.
+const (
+	maxSessions      = 64 // open documents before upload returns 503
+	sessionTTL       = 30 * time.Minute
+	uploadMemBytes   = 8 << 20  // multipart parts above this spill to temp files
+	imageUploadMax   = 10 << 20 // watermark image cap
+	watermarkPxMax   = 4096     // max width/height of a watermark image
+	thumbWidthMinmax = 2048     // clamp for thumbnail render width
+	fullWidthMax     = 4096     // clamp for full-page / export render width
+)
+
 // New builds a Server.
 func New(pool *pdfiumx.Pool, static fs.FS) *Server {
-	return &Server{
-		Pool:      pool,
-		Store:     store.NewStore(),
-		Thumbs:    store.NewThumbCache(64 << 20), // 64 MB thumbnail budget
-		MaxUpload: 150 << 20,                     // 150 MB
-		Static:    static,
+	s := &Server{
+		Pool:           pool,
+		Store:          store.NewStore(),
+		Thumbs:         store.NewThumbCache(64 << 20), // 64 MB thumbnail budget
+		MaxUpload:      150 << 20,                     // 150 MB
+		UploadsPerHour: 30,
+		limiter:        newRateLimiter(),
+		Static:         static,
+	}
+	go s.janitor()
+	return s
+}
+
+// janitor reclaims idle sessions and expires rate-limit windows.
+func (s *Server) janitor() {
+	t := time.NewTicker(time.Minute)
+	for range t.C {
+		s.apiMu.Lock()
+		for _, ses := range s.Store.Sweep(sessionTTL) {
+			s.Pool.CloseDocument(ses.Doc)
+			s.Thumbs.InvalidateVersion(ses.Version)
+		}
+		s.apiMu.Unlock()
+		s.limiter.cleanup()
 	}
 }
 
@@ -86,20 +127,38 @@ func (s *Server) Handler() http.Handler {
 	// static SPA (everything else)
 	mux.Handle("/", spaHandler(s.Static))
 
-	return withCORS(withRecover(mux))
+	return withSecurityHeaders(withRecover(s.withAPILock(mux)))
 }
 
 // ---- middleware ---------------------------------------------------------
 
-func withCORS(next http.Handler) http.Handler {
+// withAPILock serializes all API requests (see Server.apiMu). Static assets
+// stay lock-free.
+func (s *Server) withAPILock(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			s.apiMu.Lock()
+			defer s.apiMu.Unlock()
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withSecurityHeaders locks the app down to same-origin, self-hosted assets
+// only. There are no third-party scripts, fonts, or endpoints; the CSP makes
+// that a guarantee rather than a promise.
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self'; style-src 'self'; "+
+				"img-src 'self' data:; connect-src 'self'; font-src 'self'; "+
+				"object-src 'none'; base-uri 'none'; form-action 'self'; "+
+				"frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -114,6 +173,75 @@ func withRecover(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ---- rate limiting ------------------------------------------------------
+
+// rateLimiter is a fixed-window per-key counter. Keys are client IPs; the
+// window is one hour. Deliberately simple: exactness matters less than
+// bounding upload abuse on a public instance.
+type rateLimiter struct {
+	mu   sync.Mutex
+	hits map[string]*rlWindow
+}
+
+type rlWindow struct {
+	n     int
+	reset time.Time
+}
+
+func newRateLimiter() *rateLimiter { return &rateLimiter{hits: map[string]*rlWindow{}} }
+
+// allow reports whether the key is under the per-window limit and counts it.
+func (l *rateLimiter) allow(key string, limit int) bool {
+	if limit <= 0 {
+		return true
+	}
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	w := l.hits[key]
+	if w == nil || now.After(w.reset) {
+		l.hits[key] = &rlWindow{n: 1, reset: now.Add(time.Hour)}
+		return true
+	}
+	if w.n >= limit {
+		return false
+	}
+	w.n++
+	return true
+}
+
+func (l *rateLimiter) cleanup() {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for k, w := range l.hits {
+		if now.After(w.reset) {
+			delete(l.hits, k)
+		}
+	}
+}
+
+// clientIP identifies the caller. Behind the documented nginx setup
+// (loopback proxy with X-Real-IP) the header is trusted; otherwise the socket
+// address is used, so the header cannot be spoofed to dodge the limit.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		if ip := net.ParseIP(strings.TrimSpace(xri)); ip != nil && isLoopback(host) {
+			return ip.String()
+		}
+	}
+	return host
+}
+
+func isLoopback(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // ---- helpers ------------------------------------------------------------
@@ -132,6 +260,45 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	dec := json.NewDecoder(r.Body)
 	return dec.Decode(v)
+}
+
+// sanitizeName reduces an untrusted filename to a safe basename: no path
+// separators, no control characters, no quotes (which would break or inject
+// into Content-Disposition).
+func sanitizeName(name string) string {
+	name = path.Base(strings.ReplaceAll(name, "\\", "/"))
+	var b strings.Builder
+	for _, r := range name {
+		if r < 32 || r == 127 || r == '"' || r == '\\' {
+			continue
+		}
+		b.WriteRune(r)
+		if b.Len() >= 200 {
+			break
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" || out == "." || out == "/" {
+		return "document.pdf"
+	}
+	return out
+}
+
+// disposition builds an attachment header with a sanitized filename.
+func disposition(name, ext string) string {
+	base := strings.TrimSuffix(sanitizeName(name), ".pdf")
+	return `attachment; filename="` + base + ext + `"`
+}
+
+// clampInt bounds a query parameter.
+func clampInt(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // getSession loads a session or writes a 404.
@@ -173,10 +340,26 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 // ---- session lifecycle --------------------------------------------------
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(s.MaxUpload); err != nil {
+	if !s.limiter.allow(clientIP(r), s.UploadsPerHour) {
+		writeErr(w, http.StatusTooManyRequests, "too many uploads, try again later")
+		return
+	}
+	if s.Store.Count() >= maxSessions {
+		writeErr(w, http.StatusServiceUnavailable, "server is busy, close some tabs or try again later")
+		return
+	}
+	// Hard body cap first, then keep only 8 MB in RAM; larger parts spill to
+	// temp files that are removed as soon as the request finishes.
+	r.Body = http.MaxBytesReader(w, r.Body, s.MaxUpload+(1<<20))
+	if err := r.ParseMultipartForm(uploadMemBytes); err != nil {
 		writeErr(w, http.StatusBadRequest, "upload too large or malformed: "+err.Error())
 		return
 	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
+	}()
 	file, hdr, err := r.FormFile("file")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "missing file field: "+err.Error())
@@ -187,15 +370,16 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusRequestEntityTooLarge, "file exceeds limit")
 		return
 	}
-	data, err := io.ReadAll(file)
+	data, err := io.ReadAll(io.LimitReader(file, s.MaxUpload+1))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "read error: "+err.Error())
 		return
 	}
-	name := hdr.Filename
-	if name == "" {
-		name = "document.pdf"
+	if int64(len(data)) > s.MaxUpload {
+		writeErr(w, http.StatusRequestEntityTooLarge, "file exceeds limit")
+		return
 	}
+	name := sanitizeName(hdr.Filename)
 	doc, pages, err := ops.OpenBytes(s.Pool, data, "")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "cannot open PDF: "+err.Error())
@@ -218,12 +402,12 @@ func (s *Server) sessionInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	meta, _ := s.Pool.Metadata(ses.Doc)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":        ses.ID,
-		"name":      ses.Name,
-		"pages":     ses.Pages,
-		"size":      ses.Size,
-		"version":   ses.Version,
-		"metadata":  meta,
+		"id":       ses.ID,
+		"name":     ses.Name,
+		"pages":    ses.Pages,
+		"size":     ses.Size,
+		"version":  ses.Version,
+		"metadata": meta,
 	})
 }
 
@@ -246,7 +430,7 @@ func (s *Server) thumb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, _ := strconv.Atoi(r.PathValue("n"))
-	width := queryInt(r, "w", 140)
+	width := clampInt(queryInt(r, "w", 140), 32, thumbWidthMinmax)
 	if n < 0 || n >= ses.Pages {
 		writeErr(w, http.StatusNotFound, "page out of range")
 		return
@@ -276,7 +460,7 @@ func (s *Server) fullPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, _ := strconv.Atoi(r.PathValue("n"))
-	width := queryInt(r, "w", 1100)
+	width := clampInt(queryInt(r, "w", 1100), 32, fullWidthMax)
 	if n < 0 || n >= ses.Pages {
 		writeErr(w, http.StatusNotFound, "page out of range")
 		return
@@ -449,8 +633,21 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "at least two session ids required")
 		return
 	}
-	docs := make([]ops.Doc, 0, len(body.IDs))
+	// Dedupe: a repeated id would close the same document twice.
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(body.IDs))
 	for _, id := range body.IDs {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) < 2 {
+		writeErr(w, http.StatusBadRequest, "at least two distinct session ids required")
+		return
+	}
+	docs := make([]ops.Doc, 0, len(ids))
+	for _, id := range ids {
 		ses := s.Store.Get(id)
 		if ses == nil {
 			writeErr(w, http.StatusNotFound, "session "+id+" not found")
@@ -469,12 +666,12 @@ func (s *Server) merge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Replace the first session with the merged result; drop the rest.
-	first := s.Store.Get(body.IDs[0])
+	first := s.Store.Get(ids[0])
 	s.Pool.CloseDocument(first.Doc)
 	first.Doc = doc
 	s.Store.Bump(first, pages, int64(len(data)))
 	s.Thumbs.InvalidateVersion(first.Version - 1)
-	for _, id := range body.IDs[1:] {
+	for _, id := range ids[1:] {
 		if other := s.Store.Delete(id); other != nil {
 			s.Pool.CloseDocument(other.Doc)
 		}
@@ -495,17 +692,43 @@ func (s *Server) watermark(w http.ResponseWriter, r *http.Request) {
 
 	ctype := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ctype, "multipart/form-data") {
-		if err := r.ParseMultipartForm(s.MaxUpload); err != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, imageUploadMax+(1<<20))
+		if err := r.ParseMultipartForm(uploadMemBytes); err != nil {
 			writeErr(w, http.StatusBadRequest, "bad multipart: "+err.Error())
 			return
 		}
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 		file, hdr, err := r.FormFile("image")
 		if err != nil || hdr == nil {
 			writeErr(w, http.StatusBadRequest, "image file required")
 			return
 		}
 		defer file.Close()
-		decImg, _, derr := image.Decode(file)
+		if hdr.Size > imageUploadMax {
+			writeErr(w, http.StatusRequestEntityTooLarge, "image too large")
+			return
+		}
+		raw, err := io.ReadAll(io.LimitReader(file, imageUploadMax+1))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "read error: "+err.Error())
+			return
+		}
+		// Check dimensions before the full decode so a small crafted file
+		// cannot expand into a multi-gigabyte bitmap.
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, "cannot decode image: "+err.Error())
+			return
+		}
+		if cfg.Width > watermarkPxMax || cfg.Height > watermarkPxMax {
+			writeErr(w, http.StatusBadRequest, "image exceeds 4096x4096 pixels")
+			return
+		}
+		decImg, _, derr := image.Decode(bytes.NewReader(raw))
 		if derr != nil {
 			writeErr(w, http.StatusBadRequest, "cannot decode image: "+derr.Error())
 			return
@@ -523,10 +746,10 @@ func (s *Server) watermark(w http.ResponseWriter, r *http.Request) {
 		pos = r.FormValue("pos")
 	} else {
 		var body struct {
-			Text     string  `json:"text"`
-			WRatio   float64 `json:"wRatio"`
-			HRatio   float64 `json:"hRatio"`
-			Pos      string  `json:"pos"`
+			Text   string  `json:"text"`
+			WRatio float64 `json:"wRatio"`
+			HRatio float64 `json:"hRatio"`
+			Pos    string  `json:"pos"`
 		}
 		if err := decodeBody(w, r, &body); err != nil || body.Text == "" {
 			writeErr(w, http.StatusBadRequest, "image or text required")
@@ -744,9 +967,9 @@ func (s *Server) download(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	name := strings.TrimSuffix(ses.Name, ".pdf") + "-edited.pdf"
+	name := disposition(ses.Name, "-edited.pdf")
 	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	w.Header().Set("Content-Disposition", name)
 	_, _ = w.Write(data)
 }
 
@@ -761,7 +984,7 @@ func (s *Server) exportText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.TrimSuffix(ses.Name, ".pdf")+".txt" + `"`)
+	w.Header().Set("Content-Disposition", disposition(ses.Name, ".txt"))
 	_, _ = io.WriteString(w, text)
 }
 
@@ -770,8 +993,8 @@ func (s *Server) exportImages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	width := queryInt(r, "w", 1100)
-	quality := queryInt(r, "q", 85)
+	width := clampInt(queryInt(r, "w", 1100), 32, fullWidthMax)
+	quality := clampInt(queryInt(r, "q", 85), 1, 95)
 	jpeg := r.URL.Query().Get("fmt") == "jpg"
 	images, err := ops.ExportImages(s.Pool, ses.Doc, nil, width, quality, jpeg)
 	if err != nil {

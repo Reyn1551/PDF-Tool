@@ -9,6 +9,25 @@ A fast, single-binary web PDF tool built for a **1 vCPU / 1 GB RAM VPS**.
 
 One process is the whole app. PDFium is serialized to a single worker (correct on 1 vCPU, and it keeps memory flat). Thumbnails live in a byte-budgeted LRU so the footprint stays bounded.
 
+## Privacy
+
+This app is designed to be safe to self-host for untrusted users:
+
+- **Zero third-party requests.** The SPA loads only `/style.css`, `/app.js`, and
+  same-origin `/api/*`. No analytics, no CDNs, no external fonts. A Content-Security-Policy
+  header enforces this (`default-src 'self'`) so a future regression cannot silently
+  add one.
+- **Documents never leave the server.** Processing is in-memory PDFium plus a local
+  Ghostscript process; temp files live in `PrivateTmp` (systemd) or the container
+  filesystem and are deleted when the request finishes.
+- **Sessions are ephemeral.** Idle sessions are swept after 30 minutes (PDFium
+  handle closed, bytes dropped). Nothing is written to disk or a database.
+- **No cookies, no accounts, no logs of document content.** Session ids are random
+  64-bit values; the server never learns who you are beyond the rate-limit counter
+  (per-IP upload cap, in memory, expires hourly).
+- **Same-origin only.** No CORS headers are sent, so a hostile page in another tab
+  cannot drive the API.
+
 ## Features
 
 | Category | Tools |
@@ -55,7 +74,7 @@ client can invalidate stale thumbnails.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | liveness + cache stats |
-| POST | `/api/upload` | multipart `file` → new session |
+| POST | `/api/upload` | multipart `file` → new session (per-IP rate limited) |
 | GET | `/api/session/{id}` | session info + metadata |
 | DELETE | `/api/session/{id}` | close + drop session |
 | GET | `/api/session/{id}/page/{n}/thumb?w=` | PNG thumbnail (cached) |
@@ -160,8 +179,8 @@ working binary — they download one tarball or pull one image.
   flat (no per-request context churn).
 - **Bounded thumbnail cache.** Thumbnails are the only unbounded artifact; they
   live in an LRU with a 64 MB byte budget and are evicted as you scroll.
-- **Bounded sessions.** Each open document is one PDFium handle; the store is a
-  plain map you can cap by closing old sessions.
+- **Bounded sessions.** Each open document is one PDFium handle; the store caps
+  concurrent sessions (503 past the limit) and sweeps anything idle for 30 minutes.
 - **Ghostscript is spawned per compress/protect/unlock** and exits, so it only
   uses memory during that operation.
 - **`GOMAXPROCS=1`** in the container keeps the Go scheduler from oversubscribing.

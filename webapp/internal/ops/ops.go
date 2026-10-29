@@ -10,12 +10,15 @@ package ops
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"image"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"pdftoolweb/internal/pdfiumx"
 )
@@ -250,6 +253,10 @@ func Compress(data []byte, level int) ([]byte, error) {
 	})
 }
 
+// gsTimeout bounds a single Ghostscript run so a crafted PDF cannot pin a
+// handler (and the whole serialized pipeline) forever.
+const gsTimeout = 5 * time.Minute
+
 // gsRun runs Ghostscript over data (written to a temp file, because gs cannot
 // seek stdin) and returns the PDF it writes.
 func gsRun(data []byte, args []string) ([]byte, error) {
@@ -267,12 +274,17 @@ func gsRun(data []byte, args []string) ([]byte, error) {
 	if err := os.WriteFile(inPath, data, 0o600); err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), gsTimeout)
+	defer cancel()
 	full := append([]string{"-o", outPath}, args...)
 	full = append(full, inPath)
-	cmd := exec.Command(gs, full...)
+	cmd := exec.CommandContext(ctx, gs, full...)
 	var gerr bytes.Buffer
 	cmd.Stderr = &gerr
 	if err := cmd.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("gs timed out after %s", gsTimeout)
+		}
 		return nil, fmt.Errorf("gs: %v: %s", err, gerr.String())
 	}
 	out, err := os.ReadFile(outPath)

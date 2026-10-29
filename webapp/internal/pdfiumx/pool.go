@@ -18,8 +18,8 @@ import (
 
 	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/enums"
-	"github.com/klippa-app/go-pdfium/requests"
 	"github.com/klippa-app/go-pdfium/references"
+	"github.com/klippa-app/go-pdfium/requests"
 	"github.com/klippa-app/go-pdfium/single_threaded"
 	"github.com/klippa-app/go-pdfium/structs"
 )
@@ -339,7 +339,7 @@ func (p *Pool) Redact(doc references.FPDF_DOCUMENT, rects []Rect) error {
 
 // Rect is a redaction region in PDF points (origin bottom-left).
 type Rect struct {
-	Page int
+	Page       int
 	X, Y, W, H float64
 }
 

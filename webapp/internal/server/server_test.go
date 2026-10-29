@@ -382,3 +382,84 @@ func TestSessionNotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 }
+
+// ---- hardening ----------------------------------------------------------
+
+func TestSecurityHeaders(t *testing.T) {
+	ts, _, _ := startServer(t)
+	resp := get(t, ts.URL+"/api/health")
+	defer resp.Body.Close()
+	h := resp.Header
+	if h.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("missing nosniff")
+	}
+	if h.Get("Referrer-Policy") != "no-referrer" {
+		t.Fatal("missing Referrer-Policy")
+	}
+	if !strings.Contains(h.Get("Content-Security-Policy"), "default-src 'self'") {
+		t.Fatalf("CSP: %s", h.Get("Content-Security-Policy"))
+	}
+	if h.Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("CORS header must be absent (same-origin only)")
+	}
+}
+
+func TestFilenameSanitized(t *testing.T) {
+	ts, _, pdf := startServer(t)
+	// Upload with an injected filename: quotes + CRLF + path traversal.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	f, _ := os.Open(pdf)
+	defer f.Close()
+	fw, _ := mw.CreateFormFile("file", "../../evil\"\r\nX-Injected: 1.pdf")
+	_, _ = io.Copy(fw, f)
+	mw.Close()
+	resp := do(t, http.MethodPost, ts.URL+"/api/upload", &buf, "multipart/form-data; boundary="+mw.Boundary())
+	id := idOf(mustJSON(t, resp))
+	dresp := get(t, ts.URL+"/api/session/"+id+"/download")
+	defer dresp.Body.Close()
+	cd := dresp.Header.Get("Content-Disposition")
+	if strings.ContainsAny(cd, "\r\n") {
+		t.Fatalf("CRLF in disposition: %q", cd)
+	}
+	if strings.Contains(cd, "../") || strings.Contains(cd, `\`) {
+		t.Fatalf("path traversal in disposition: %q", cd)
+	}
+	if dresp.Header.Get("X-Injected") != "" {
+		t.Fatal("header injection succeeded")
+	}
+	if !strings.HasPrefix(cd, `attachment; filename="`) || !strings.HasSuffix(cd, `.pdf"`) {
+		t.Fatalf("disposition: %q", cd)
+	}
+}
+
+func TestRenderWidthClamped(t *testing.T) {
+	ts, _, pdf := startServer(t)
+	id := idOf(upload(t, ts.URL, pdf))
+	// A huge width must be clamped, not rendered (would OOM).
+	resp := get(t, ts.URL+"/api/session/"+id+"/page/0/thumb?w=99999999")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("clamped thumb: %d", resp.StatusCode)
+	}
+	if w := resp.Header.Get("X-Render-Width"); w == "" || len(w) > 5 {
+		t.Fatalf("render width not clamped: %q", w)
+	}
+}
+
+func TestMergeDuplicateIDs(t *testing.T) {
+	ts, _, pdf := startServer(t)
+	a := idOf(upload(t, ts.URL, pdf))
+	// Same id twice must be rejected up front (it used to double-close the
+	// document handle → use-after-free).
+	resp := post(t, ts.URL+"/api/session/"+a+"/merge", map[string]any{"ids": []string{a, a}})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("dup merge status: %d", resp.StatusCode)
+	}
+	// Session must still be usable.
+	info := mustJSON(t, get(t, ts.URL+"/api/session/"+a))
+	if pagesOf(info) != 5 {
+		t.Fatalf("pages after dup merge: %v", info["pages"])
+	}
+}
