@@ -38,6 +38,17 @@ async function api(path, opts = {}) {
 const postJSON = (path, obj) =>
   api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
 
+/** Fetch that turns an error response into a thrown Error with the server message. */
+async function fetchOk(path) {
+  const res = await fetch(path);
+  if (!res.ok) {
+    let msg = res.statusText || "request failed";
+    try { const j = await res.json(); if (j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return res;
+}
+
 // ============================================================ toast + busy
 let toastTimer = null;
 function toast(msg, kind = "ok") {
@@ -114,11 +125,12 @@ function modal({ title, sub, fields, okText = "Apply", onOk, danger = false, ico
     for (const k in inputs) vals[k] = inputs[k].value;
     ok.disabled = true; busy(true);
     try { await onOk(vals); close(); }
-    catch (e) { toast(e.message, "err"); ok.disabled = false; busy(false); }
+    catch (e) { toast(e.message, "err"); ok.disabled = false; }
+    finally { busy(false); }
   };
   $("#modal").classList.remove("hidden");
-  const first = card.querySelector("input,select");
-  if (first) first.focus();
+  const first = card.querySelector("input,select") || ok;
+  first.focus();
 }
 
 // ============================================================ upload / open
@@ -312,7 +324,9 @@ function runTool(it) {
   closeSheet();
   if (!state.id) return;
   busy(true);
-  Promise.resolve(it.act()).catch(() => {}).finally(() => busy(false));
+  Promise.resolve(it.act()).catch((e) => {
+    if (e && e.message !== "no selection") toast(e.message || "That action failed.", "err");
+  }).finally(() => busy(false));
 }
 
 function renderTools() {
@@ -524,7 +538,7 @@ async function compressModal() {
 
 // ---- export
 async function exportText() {
-  const res = await fetch(`/api/session/${state.id}/export/text`);
+  const res = await fetchOk(`/api/session/${state.id}/export/text`);
   const text = await res.text();
   downloadBlob(new Blob([text], { type: "text/plain" }), state.name.replace(/\.pdf$/i, "") + ".txt");
   toast("Text file is ready to save");
@@ -577,7 +591,7 @@ function applyEdit(s, message) {
 async function download() {
   busy(true);
   try {
-    const res = await fetch(`/api/session/${state.id}/download`);
+    const res = await fetchOk(`/api/session/${state.id}/download`);
     const blob = await res.blob();
     downloadBlob(blob, state.name.replace(/\.pdf$/i, "") + "-edited.pdf");
     toast("Saved to your downloads");
