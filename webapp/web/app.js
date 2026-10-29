@@ -369,7 +369,10 @@ async function deletePages() {
     fields: [],
     onOk: async () => {
       const s = await postJSON(`/api/session/${state.id}/delete`, { pages });
-      applyEdit(s, `Removed ${plural(pages.length, "page")}`);
+      const del = new Set(pages);
+      const selMap = new Map();
+      for (let i = 0; i < state.pages; i++) if (!del.has(i)) selMap.set(i, selMap.size);
+      applyEdit(s, `Removed ${plural(pages.length, "page")}`, selMap);
     },
   });
 }
@@ -397,7 +400,9 @@ async function reverse() {
     fields: [],
     onOk: async () => {
       const s = await postJSON(`/api/session/${state.id}/reverse`, {});
-      applyEdit(s, "Page order flipped");
+      const selMap = new Map();
+      for (let i = 0; i < state.pages; i++) selMap.set(i, state.pages - 1 - i);
+      applyEdit(s, "Page order flipped", selMap);
     },
   });
 }
@@ -429,13 +434,14 @@ async function reorderSelected() {
     iconName: "move", okText: "Move pages",
     fields: [{ key: "pos", label: "Insert before page", type: "number", value: 1, min: 1, max: state.pages + 1 }],
     onOk: async (v) => {
-      const pos = Math.max(0, Math.min(state.pages, +v.pos - 1));
+      const pos = Math.max(0, Math.min(state.pages, (Number(v.pos) || 1) - 1));
       const set = new Set(pages);
       const rest = [];
       for (let i = 0; i < state.pages; i++) if (!set.has(i)) rest.push(i);
       const order = rest.slice(0, pos).concat(pages).concat(rest.slice(pos));
       const s = await postJSON(`/api/session/${state.id}/reorder`, { order });
-      applyEdit(s, `Moved ${plural(pages.length, "page")} to position ${pos + 1}`);
+      const selMap = new Map(order.map((oldIdx, newIdx) => [oldIdx, newIdx]));
+      applyEdit(s, `Moved ${plural(pages.length, "page")} to position ${pos + 1}`, selMap);
     },
   });
 }
@@ -575,7 +581,11 @@ function downloadBlob(blob, name) {
 }
 
 // ============================================================ apply edit
-function applyEdit(s, message) {
+function applyEdit(s, message, selMap) {
+  if (selMap) {
+    state.selection = new Set([...state.selection].map(p => selMap.get(p)).filter(p => p != null));
+    if (selMap.has(state.page)) state.page = selMap.get(state.page);
+  }
   state.pages = s.pages; state.version = s.version; state.size = s.size;
   state.name = s.name;
   if (state.page >= state.pages) state.page = state.pages - 1;
