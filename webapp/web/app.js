@@ -49,6 +49,8 @@ async function fetchOk(path) {
   return res;
 }
 
+const isPdf = (f) => f && (/\.pdf$/i.test(f.name) || f.type === "application/pdf");
+
 // ============================================================ toast + busy
 let toastTimer = null;
 function toast(msg, kind = "ok") {
@@ -135,6 +137,7 @@ function modal({ title, sub, fields, okText = "Apply", onOk, danger = false, ico
 
 // ============================================================ upload / open
 async function openFile(file) {
+  if (!isPdf(file)) { toast("Only PDF files are supported.", "err"); return; }
   busy(true);
   try {
     const fd = new FormData();
@@ -151,6 +154,7 @@ function adoptSession(s) {
   state.id = s.id; state.name = s.name; state.pages = s.pages;
   state.version = s.version; state.size = s.size || 0; state.page = 0;
   state.selection.clear();
+  try { sessionStorage.setItem("pdfToolSession", s.id); } catch {}
   $("#empty").classList.add("hidden");
   $("#app").classList.remove("hidden");
   document.body.classList.add("has-doc");
@@ -160,7 +164,20 @@ function adoptSession(s) {
   updatePageInfo();
 }
 
+/** Re-open the session from a page refresh, if it is still alive server-side. */
+async function restoreSession() {
+  let id = null;
+  try { id = sessionStorage.getItem("pdfToolSession"); } catch {}
+  if (!id) return;
+  try {
+    adoptSession(await api(`/api/session/${id}`));
+  } catch {
+    try { sessionStorage.removeItem("pdfToolSession"); } catch {}
+  }
+}
+
 function renderMeta() {
+  document.title = state.name ? `${state.name} - PDF Tool` : "PDF Tool";
   const kb = state.size ? (state.size / 1024).toFixed(0) + " KB" : "";
   $("#docMeta").innerHTML = `
     <div class="doc-name">${icon("doc")}<span>${escapeHtml(state.name)}</span></div>
@@ -614,7 +631,11 @@ let dragDepth = 0;
 function setupDnD() {
   window.addEventListener("dragenter", (e) => { e.preventDefault(); if (++dragDepth === 1) $("#dropzone").classList.remove("hidden"); });
   window.addEventListener("dragover", (e) => e.preventDefault());
-  window.addEventListener("dragleave", (e) => { e.preventDefault(); if (--dragDepth === 0) $("#dropzone").classList.add("hidden"); });
+  window.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) $("#dropzone").classList.add("hidden");
+  });
   window.addEventListener("drop", (e) => {
     e.preventDefault(); dragDepth = 0; $("#dropzone").classList.add("hidden");
     const f = e.dataTransfer.files && e.dataTransfer.files[0];
@@ -811,5 +832,7 @@ function init() {
   $("#mSave").onclick = download;
   $("#sheetClose").onclick = closeSheet;
   $("#sheet").querySelector("[data-close]").onclick = closeSheet;
+
+  restoreSession();
 }
 init();
